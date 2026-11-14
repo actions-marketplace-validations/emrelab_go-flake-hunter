@@ -15,6 +15,14 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   package, this repo's own `internal/cli/compile` — the previous behaviour
   printed a single error line and no findings at all.
 
+### Removed
+- The autonomous issue loop: `docs/AUTO.md`, `scripts/auto/` and the `auto`,
+  `auto-next`, `auto-verify`, `auto-digest` targets. The queue it drained is
+  empty and the unattended runbook was 370 lines of process the project no
+  longer follows; `CONTRIBUTING.md` and `docs/index.md` no longer point at it.
+- `docs/ISSUE-VERIFICATION.md` (a dated snapshot of six issues, all closed) and
+  `docs/audit/` (an internal audit plan that referenced paths outside the repo).
+
 ### Security
 - Validate capsule IDs and generated calls. Repro, compile and replay resolve
   recorded package names against the checkout. Witness creation is exclusive,

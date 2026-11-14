@@ -1,4 +1,4 @@
-.PHONY: all build test test-short test-repeat lint vuln cost vet fmt cover fixtures clean run smoke demo auto auto-next auto-verify auto-digest
+.PHONY: all build test test-short test-repeat lint vuln cost vet fmt cover fixtures clean run smoke demo
 
 BINARY := go-flake-hunter
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -48,23 +48,6 @@ test-repeat:
 # Operator tool, not a gate: see the header of the script.
 cost:
 	scripts/test-cost.sh
-
-# Autonomous run over the issue tracker. No cron: a human starts it, see
-# docs/AUTO.md. MAX caps how many issues one run may touch.
-auto:
-	scripts/auto/run.sh $(MAX)
-
-auto-next:
-	scripts/auto/next.sh
-
-auto-verify:
-	scripts/auto/verify.sh
-
-# The human's half of the loop: open auto/* PRs with their CI state, blocked
-# issues, and whether the cron is armed for a queue that still has work.
-# Read-only, and NOT a monitor — its output changes every hour by design.
-auto-digest:
-	scripts/auto/digest.sh
 
 vet:
 	go vet ./...
