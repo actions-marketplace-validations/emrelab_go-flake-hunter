@@ -314,6 +314,14 @@ test ends the run with `ErrPackageFailed`. Missing or inconsistent terminal
 events produce `ErrIncomplete`. Both return exit 7. Compilation failures
 return exit 6. Each run consumes budget and inherits the target Go environment.
 
+Exit 7 is per package, not per scan: `hunt` records the package as skipped,
+keeps scanning the rest, and names it in the summary. The two ways to get here
+are a package whose tests fail without naming a test (`ErrPackageFailed`) and a
+run that does not finish — a package whose own `go test` outlives the
+two-minute per-run limit, for example (`ErrIncomplete`). Stopping the whole scan
+on either made the tool silent on exactly the repositories it is for, where one
+slow package is common.
+
 ### 5.3. Order reconstruction
 
 In the `-json` stream, `Action: "run"` events give the **actual start order** of the tests (verified). But in parallel tests, the `run` event of a test calling `t.Parallel()` happens at the moment of *pause*, i.e. the order is misleading.
@@ -810,7 +818,7 @@ No panic when the budget is exceeded: a `status: partial` capsule is written and
 | `ErrBudgetExceeded` | `4` | "budget exceeded" + note: "raise the budget: --budget N --timeout 10m" (partial capsule written) |
 | `ErrUnsupportedTest` | `5` | "unsupported test form: <reason>" (unsupported witness or package combination) |
 | `ErrBuildFailed` | `6` | "package failed to build: <reason>" — also `replay` when the package does not compile (a build error is never reported as "the flake is fixed") |
-| `ErrPackageFailed` or `ErrIncomplete` | `7` | package failed after its tests or the selected run did not complete |
+| `ErrPackageFailed` or `ErrIncomplete` | `7` | package failed after its tests or the selected run did not complete; the package is skipped and named in the summary, the rest of the scan still runs |
 | internal error | `10` | "internal error: <id> (use --debug for detail)" |
 | `context.Canceled` / SIGINT | `130` | "cancelled (SIGINT); unfinished witness files deleted" (128+SIGINT) |
 
@@ -850,8 +858,11 @@ Without `--debug`, no stack trace is shown. A raw panic never leaks to the user 
   Workers share the thread-safe run/time budget and cached runner; reports,
   counters and capsule lists remain worker-local and merge in package order.
   Canonical directory deduplication prevents a package from being scheduled twice.
-  An error stops new dispatch while active workers finish honestly; partial
-  findings survive and retain their exit code. `repro` and `--polluter-pkg`
+  A package-scoped failure (exit 7: its tests failed without naming one, or its
+  run did not finish) is recorded as skipped and dispatch continues, so one slow
+  package cannot hide the rest of the repository. Any other error — budget,
+  cancellation, usage — stops new dispatch while active workers finish honestly;
+  partial findings survive and retain their exit code. `repro` and `--polluter-pkg`
   scans are serial. Cross-binary sequences lock both directories in canonical
   order, with context tokens preserving re-entrant ownership of both.
 - **Two runs in the same package are never parallel** — they'd share the same port/temp file/DB and produce false positives against each other. A per-package `sync.Mutex` semaphore and a directory lock (`policy/dirlock`) also prevent a second go-flake-hunter in the same directory.

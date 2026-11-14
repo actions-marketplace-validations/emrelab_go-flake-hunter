@@ -3,10 +3,37 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"sync"
+
+	"github.com/emrelab/go-flake-hunter/internal/domain"
 )
+
+// packageScoped reports whether err is a verdict about the package that
+// produced it — its tests failed without naming one, or its run did not finish
+// — rather than about the scan. Those two are exit 7 either way, but one sick
+// package must not hide the rest: stopping the scan there made `hunt ./...`
+// print nothing at all on repositories where a single package is slower than
+// the per-run timeout, which is exactly the repository this tool is for.
+func packageScoped(err error) bool {
+	return errors.Is(err, domain.ErrIncomplete) || errors.Is(err, domain.ErrPackageFailed)
+}
+
+// skipReason is the sentinel's own wording, without the wrapped package path
+// the caller already prints next to it.
+func skipReason(err error) string {
+	switch {
+	case errors.Is(err, domain.ErrIncomplete):
+		return "test run incomplete"
+	case errors.Is(err, domain.ErrPackageFailed):
+		return "package failed"
+	}
+	return err.Error()
+}
 
 // packages bounds concurrency at package granularity. Each worker owns its
 // reporting state; only the runner and total budget are shared. Reports merge
@@ -55,7 +82,7 @@ func (s *scanner) packages(ctx context.Context, dirs []string, jobs int) error {
 				child := &scanner{o: s.o, out: IO{Stdout: &r.stdout, Stderr: diagnostics, Debug: s.out.Debug}, registry: s.registry, runner: s.runner, budget: s.budget, only: s.only, baseline: s.baseline, cwd: s.cwd}
 				r.child = child
 				r.err = child.pkg(ctx, unique[i])
-				if r.err != nil {
+				if r.err != nil && !packageScoped(r.err) {
 					mu.Lock()
 					halt = true
 					mu.Unlock()
@@ -87,8 +114,21 @@ func (s *scanner) packages(ctx context.Context, dirs []string, jobs int) error {
 			dst.explained += c.explained
 			dst.skipped += c.skipped
 		}
-		if r.err != nil && first == nil {
-			first = r.err
+		if r.err != nil {
+			// Kept per package, not just as the run's first error: the summary
+			// has to name what the verdict does not cover.
+			if packageScoped(r.err) {
+				// A path that escapes the working directory is no more readable
+				// than the absolute one the user typed.
+				label := s.relDir(unique[i])
+				if strings.HasPrefix(label, "..") {
+					label = unique[i]
+				}
+				s.skipped = append(s.skipped, fmt.Sprintf("%s: %s", label, skipReason(r.err)))
+			}
+			if first == nil {
+				first = r.err
+			}
 		}
 	}
 	return first

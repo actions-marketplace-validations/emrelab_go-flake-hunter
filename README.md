@@ -253,7 +253,9 @@ note — evidence is never invented.
   "runs": 42, "maxRuns": 1000, "packages": [] }
 ```
 
-Package-level failures, incomplete runs, and broken tests appear in `packages`.
+Package-level failures, incomplete runs, and broken tests appear in `packages`;
+they do not stop the scan, so the same document also carries every finding from
+the packages that did run.
 Partial capsules carry `"conclusion": "inconclusive"` in reports.
 
 `go-flake-hunter init --replay-capsule .go-flake-hunter/gfh_ID.json` adds a regression
@@ -291,7 +293,7 @@ CI scripts bind to these; no path fails silently with 0.
 | `4` | budget exceeded (partial capsule written) |
 | `5` | unsupported witness form or compile of a non-confirmed/cross-clause/cross-binary capsule |
 | `6` | package does not build |
-| `7` | package failed independently of its tests or the run did not complete |
+| `7` | a package failed independently of its tests or its run did not complete; the scan still covers the other packages and names this one as skipped |
 | `10` | internal error (detail with `--debug`) |
 | `130` | cancelled (SIGINT) |
 

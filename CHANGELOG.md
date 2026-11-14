@@ -6,6 +6,15 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixes
+- `hunt ./...` no longer abandons the scan on the first package that fails or
+  exceeds the per-run timeout. That package is named in the summary
+  (`1 of 9 packages (1 skipped)` plus the reason), the remaining packages are
+  still scanned, and the exit code stays 7. On repositories where one package
+  needs more than the two-minute per-run limit — `dgraph-io/badger`'s root
+  package, this repo's own `internal/cli/compile` — the previous behaviour
+  printed a single error line and no findings at all.
+
 ### Security
 - Validate capsule IDs and generated calls. Repro, compile and replay resolve
   recorded package names against the checkout. Witness creation is exclusive,

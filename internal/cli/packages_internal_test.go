@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -155,6 +156,32 @@ func TestPackagesKeepInputOrderAndSerializeWhenJobsOne(t *testing.T) {
 		if jobs == 1 && maxActive.Load() != 1 {
 			t.Fatalf("jobs=1 overlapped %d probes", maxActive.Load())
 		}
+	}
+}
+
+func TestPackagesSkipSickPackageAndKeepScanning(t *testing.T) {
+	dirs := packageDirs(t)
+	var probed atomic.Int32
+	p := scanProbe{fn: func(_ context.Context, target probe.Target, _ gotest.Runner) (*domain.Witness, error) {
+		probed.Add(1)
+		if target.Dir == dirs[0] {
+			return nil, domain.Wrap(domain.ErrIncomplete, "%s", target.Dir)
+		}
+		return nil, probe.ErrNotReproduced
+	}}
+	r := &gotest.Fake{DiscoverFn: func(d string) ([]domain.TestID, error) {
+		return []domain.TestID{{Package: d, Name: "TestPlain"}}, nil
+	}}
+	s := testScanner(p, r)
+	err := s.packages(context.Background(), dirs, 2)
+	if !errors.Is(err, domain.ErrIncomplete) {
+		t.Fatalf("err=%v, want the skipped package's own error (exit 7)", err)
+	}
+	if probed.Load() != 2 {
+		t.Fatalf("probed %d packages, want 2: one sick package stopped the scan", probed.Load())
+	}
+	if len(s.skipped) != 1 || !strings.Contains(s.skipped[0], "test run incomplete") {
+		t.Fatalf("skipped=%v, want one entry naming the reason", s.skipped)
 	}
 }
 

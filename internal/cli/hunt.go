@@ -122,7 +122,11 @@ type scanner struct {
 	collected []domain.Capsule
 	results   []domain.PackageResult
 	broken    bool
-	cwd       string
+	// skipped names the packages this scan could not finish ("dir: reason").
+	// A verdict that silently drops a third of the repository is the false
+	// clean this project exists to prevent, so the summary has to carry them.
+	skipped []string
+	cwd     string
 	// scanned counts the tests this run examined; the clean-scan summary is
 	// one line per probe, so the count has to come from here, not from the
 	// per-test blocks that no longer print (B13).
@@ -202,8 +206,20 @@ func (s *scanner) writeCleanSummary(w io.Writer, packages int) {
 	if packages == 1 {
 		noun = "package"
 	}
-	_, _ = fmt.Fprintf(w, "flake not found: %d tests in %d %s, %d/%d runs, %s\n",
-		s.scanned, packages, noun, s.budget.Runs(), s.budget.MaxRuns,
+	scope := fmt.Sprintf("%d %s", packages, noun)
+	if n := len(s.skipped); n > 0 {
+		// The verdict covers what ran. "N packages" over a scan that lost one
+		// reads as a complete clean, which is the one claim this tool must
+		// never make by accident.
+		scope = fmt.Sprintf("%d of %d %s (%d skipped)", packages-n, packages, noun, n)
+	}
+	// Zero scanned packages is not a clean scan: say that nothing was judged.
+	headline := "flake not found"
+	if packages-len(s.skipped) == 0 {
+		headline = "no package could be scanned"
+	}
+	_, _ = fmt.Fprintf(w, "%s: %d tests in %s, %d/%d runs, %s\n",
+		headline, s.scanned, scope, s.budget.Runs(), s.budget.MaxRuns,
 		time.Since(s.started).Round(time.Millisecond))
 	for _, name := range s.tallyOrder {
 		t := s.tallies[name]
@@ -217,6 +233,12 @@ func (s *scanner) writeCleanSummary(w io.Writer, packages int) {
 			_, _ = fmt.Fprintf(w, ", not applicable %d", t.skipped)
 		}
 		_, _ = fmt.Fprintln(w)
+	}
+	if len(s.skipped) > 0 {
+		_, _ = fmt.Fprintf(w, "  skipped, not scanned to the end (exit %d):\n", domain.ExitPackageFailed)
+		for _, sk := range s.skipped {
+			_, _ = fmt.Fprintf(w, "    %s\n", sk)
+		}
 	}
 }
 
@@ -609,7 +631,12 @@ func hunt(ctx context.Context, args []string, out IO) error {
 	if err := s.flush(); err != nil {
 		return err
 	}
-	if runErr != nil {
+	// A package-scoped failure is a verdict about that package: the rest of the
+	// scan ran and its output belongs to the user, so the error is returned
+	// below the summary instead of here. A global failure (budget, cancel,
+	// usage) is not a scan result. --write-baseline never records a scan that
+	// lost a package.
+	if runErr != nil && (!packageScoped(runErr) || writeBaseline) {
 		return runErr
 	}
 	if writeBaseline {
@@ -626,7 +653,13 @@ func hunt(ctx context.Context, args []string, out IO) error {
 	if (o.format == "" || o.format == "text") && !o.verbose && s.found == 0 && !s.broken {
 		s.writeCleanSummary(out.Stdout, len(dirs))
 	}
-	return s.outcome(false)
+	// The gate speaks first: a run that found a flake has something to act on
+	// even when another package was skipped. Otherwise the skipped packages
+	// decide the exit code — a partial scan is never a clean one.
+	if err := s.outcome(false); err != nil {
+		return err
+	}
+	return runErr
 }
 
 // writeBaselineFile records this run's ids, keeping the ones already known.

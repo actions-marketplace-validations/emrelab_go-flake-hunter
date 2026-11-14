@@ -31,6 +31,11 @@ func TestMain(m *testing.M) {
 	if code != 7 || !strings.Contains(stderr, "package failed") || !strings.Contains(out, "package-failed") {
 		t.Fatalf("hunt exit=%d stdout=%s stderr=%s", code, out, stderr)
 	}
+	// Nothing was judged, so the text summary must not claim a clean scan.
+	code, out, stderr = clitest.Run("hunt", dir)
+	if code != 7 || !strings.Contains(out, "no package could be scanned") || !strings.Contains(out, "1 skipped") {
+		t.Errorf("text hunt exit=%d stdout=%s stderr=%s", code, out, stderr)
+	}
 }
 
 func TestAuditC4_AlwaysFailingTestIsBroken(t *testing.T) {
@@ -81,6 +86,43 @@ func TestAuditC5_PartialIsInconclusiveOnEverySurface(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAuditC11_SickPackageDoesNotHideTheRest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	dir := clitest.FixtureDir(t, "clean")
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A package that exits non-zero without any test reporting the failure.
+	// The scan used to stop here, so the user saw the failure and nothing about
+	// the package that was fine.
+	src := `package sub
+import ("flag"; "os"; "testing")
+func TestMain(m *testing.M) {
+	flag.Parse()
+	code := m.Run()
+	if flag.Lookup("test.list").Value.String() == "" && code == 0 { code = 7 }
+	os.Exit(code)
+}
+func TestSub(t *testing.T) {}
+`
+	if err := os.WriteFile(filepath.Join(sub, "sub_test.go"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, stderr := clitest.Run("hunt", dir, sub)
+	if code != 7 {
+		t.Fatalf("exit=%d stdout=%s stderr=%s", code, out, stderr)
+	}
+	if !strings.Contains(out, "1 of 2 packages (1 skipped)") || !strings.Contains(out, "sub: package failed") {
+		t.Fatalf("skipped package not reported: %s", out)
+	}
+	if !strings.Contains(out, "flake not found:") {
+		t.Fatalf("the healthy package's verdict was lost: %s", out)
 	}
 }
 
