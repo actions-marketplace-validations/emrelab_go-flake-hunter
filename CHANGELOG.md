@@ -28,17 +28,27 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   (`--timeout`) is checked between runs and never reached. The nightly
   `self-hunt-full` job failed for exactly this reason on three of this repo's
   own subprocess-driven packages (`internal/cli/{compile,hunt,huntci}`, ~85 s
-  per run). The nightly now passes `--run-timeout 10m`. Measured locally on
-  `internal/cli/compile`: before, the package was skipped as `incomplete`
-  within seconds; after, the repeat probe runs and returns "does not explain"
-  and the order probe spends real budget. The residual outcome for those three
-  packages is the documented budget warning (exit 4), which the job turns into
-  a warning rather than a failure.
+  per run). Measured locally on `internal/cli/compile`: before, the package was
+  skipped as `incomplete` within seconds; after, the repeat probe runs and
+  returns "does not explain" and the order probe spends real budget.
+- The nightly self-hunt no longer scans the six test-only `internal/cli/*`
+  packages (`compile`, `hunt`, `huntci`, `huntevidence`, `replay`, `surface`).
+  Raising the per-run ceiling fixed the "incomplete" report but exposed the
+  real cost: those packages spawn `go test` themselves, and a hunt re-runs each
+  of them once per hypothesis and once per shuffle seed. With them included the
+  job spent 57m50s of a 60m wall over 510 runs and still could not finish one of
+  them. They carry no product code (ARCHITECTURE §11.5) and the repeat sweep
+  above already exercises all six at `-count=10` on three OSes, so the hunt
+  now covers the 14 packages that contain the tool. A flake in the harness is
+  still caught — by the job that was always the right one for it.
 - The nightly repeat sweep's per-package timeout was a guess at a measured
-  cost: `internal/cli/compile` takes 1509 s at `-count=10` on windows-latest,
-  and the 45m ceiling failed there (`panic: test timed out after 45m0s`) on a
-  loaded runner. Windows now gets 90m; Linux and macOS keep 45m, which they
-  finish well inside.
+  cost. At `-count=10` the full run now takes 18.8m on ubuntu, 30.5m on macOS
+  and 69.3m on windows; the old 45m ceiling failed on windows (`panic: test
+  timed out after 45m0s`) and the 90m that replaced it left only 1.3x headroom
+  against a 2.2x run-to-run variance (the same suite finished in 31m the night
+  before). Windows now gets 120m — 1.7x over the high sample. `-count` stays 10:
+  the 7th-run leak this job exists for lives at count 7-10, so lowering it
+  would trade the signal for the clock.
 - `hunt ./...` no longer abandons the scan on the first package that fails or
   exceeds the per-run timeout. That package is named in the summary
   (`1 of 9 packages (1 skipped)` plus the reason), the remaining packages are

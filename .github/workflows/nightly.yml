@@ -20,20 +20,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The per-package timeout is measured, not guessed. At -count=10 the
-          # slowest package is internal/cli/compile, whose tests spawn `go test`
-          # subprocesses: 1509 s on windows-latest, 967 s for internal/cli/hunt.
-          # 45m sat at 1.8x that and a loaded runner on 2026-11-15 blew through
-          # it (panic: test timed out after 45m0s, three packages at 2700 s).
-          # Linux and macOS finish inside the old ceiling; Windows gets the
-          # headroom instead of a lower -count, because the 7th-run leak this
-          # job exists for lives at count 7-10.
+          # Ceilings are measured, not guessed. Full-run wall time at -count=10
+          # on run 43717279232: ubuntu 18.8m, macos 30.5m, windows 69.3m.
+          # The earlier 45m failed on windows (panic: test timed out after
+          # 45m0s, three packages at 2700s), and 90m left only 1.3x headroom
+          # against a 2.2x run-to-run variance (a previous windows run of the
+          # same suite finished in 31m). 120m is 1.7x over the high sample.
+          # The count stays 10: the 7th-run leak this job exists for lives at
+          # count 7-10, so lowering it would trade the signal for the clock.
           - os: ubuntu-latest
             timeout: 45m
           - os: macos-latest
             timeout: 45m
           - os: windows-latest
-            timeout: 90m
+            timeout: 120m
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -78,12 +78,25 @@ jobs:
           # --run-timeout: without it a package whose own suite needs more than
           # the 2m default can never be scanned. internal/cli/compile,
           # internal/cli/hunt and internal/cli/huntci spawn `go test` themselves
-          # and take ~85 s per run locally, more on a 4-vCPU runner: every
-          # hypothesis came back "test run incomplete" and the job exited 7 for
-          # three named packages on 2026-11-15. The ceiling is raised, not the
-          # failure swallowed — a package that still cannot finish stays visible
-          # in the summary.
-          ./go-flake-hunter hunt ./... --capsule-dir "$RUNNER_TEMP/capsules" --fail-on-flake --budget 2000 --timeout 60m --run-timeout 10m || rc=$?
+          # and take ~85 s per run: every hypothesis came back "test run
+          # incomplete" and the job exited 7 for three named packages on
+          # 2026-11-15.
+          #
+          # The `go list` filter is the second half of the same problem, and it
+          # is measured, not defensive. Those six packages are test-only
+          # (ARCHITECTURE §11.5) — no product code — and a hunt re-runs each of
+          # them once per hypothesis and once per shuffle seed. With them
+          # included the scan spent 57m50s of the 60m wall and still reported
+          # internal/cli/compile as incomplete; the budget went to re-running
+          # test harnesses, not to finding defects in the tool.
+          #
+          # Nothing is lost: repeat-sweep above exercises exactly these packages
+          # at -count=10 on three OSes, and `make test` runs them once. When one
+          # of them does go flaky, that job names it and `go test -shuffle` on
+          # the reported seed is the reproducer.
+          pkgs=()
+          while IFS= read -r p; do pkgs+=("$p"); done < <(go list ./... | grep -vE 'internal/cli/(compile|hunt|huntci|huntevidence|replay|surface)$')
+          ./go-flake-hunter hunt "${pkgs[@]}" --capsule-dir "$RUNNER_TEMP/capsules" --fail-on-flake --budget 2000 --timeout 60m --run-timeout 10m || rc=$?
           shopt -s nullglob
           capsules=("$RUNNER_TEMP"/capsules/gfh_*.json)
           if [ "${#capsules[@]}" -gt 0 ]; then echo "capsules=true" >> "$GITHUB_OUTPUT"; fi
