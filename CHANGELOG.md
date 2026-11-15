@@ -21,6 +21,24 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   `./dev generate go`. Files under `docs/real-world/upstream-2026-11/`.
 
 ### Fixes
+- `--run-timeout` sets the per-run ceiling for one `go test` (default 2m). A
+  package whose own suite is slower than that ceiling could not be scanned at
+  all: every hypothesis returned `run incomplete` and the package was reported
+  as skipped with exit 7, with no knob to change it — the wall budget
+  (`--timeout`) is checked between runs and never reached. The nightly
+  `self-hunt-full` job failed for exactly this reason on three of this repo's
+  own subprocess-driven packages (`internal/cli/{compile,hunt,huntci}`, ~85 s
+  per run). The nightly now passes `--run-timeout 10m`. Measured locally on
+  `internal/cli/compile`: before, the package was skipped as `incomplete`
+  within seconds; after, the repeat probe runs and returns "does not explain"
+  and the order probe spends real budget. The residual outcome for those three
+  packages is the documented budget warning (exit 4), which the job turns into
+  a warning rather than a failure.
+- The nightly repeat sweep's per-package timeout was a guess at a measured
+  cost: `internal/cli/compile` takes 1509 s at `-count=10` on windows-latest,
+  and the 45m ceiling failed there (`panic: test timed out after 45m0s`) on a
+  loaded runner. Windows now gets 90m; Linux and macOS keep 45m, which they
+  finish well inside.
 - `hunt ./...` no longer abandons the scan on the first package that fails or
   exceeds the per-run timeout. That package is named in the summary
   (`1 of 9 packages (1 skipped)` plus the reason), the remaining packages are

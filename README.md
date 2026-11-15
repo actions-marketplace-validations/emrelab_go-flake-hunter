@@ -9,7 +9,7 @@
 
 > Reproduce the flake in 30 seconds instead of 30 minutes — and leave a permanent regression test in the repo.
 
-246 tests + 2 fuzz targets · CI on linux/macos/windows + a nightly sweep · zero dependencies ·
+247 tests + 2 fuzz targets · CI on linux/macos/windows + a nightly sweep · zero dependencies ·
 eight real upstream flake cases reduced to witnesses ([evidence](docs/real-world/README.md))
 
 Finds flaky Go-test failures caused by **order, parallelism, repetition and
@@ -217,7 +217,7 @@ earlier scans remain evidence only about those specific scans.
 | `init [dir]` | writes a `.github/workflows/go-flake-hunter.yml` scaffold | ❌ |
 
 Shared flags: `--format text|json|markdown|sarif` · `--budget N` · `--timeout 10m` ·
-`--seeds N` · `--repeat N` · `--capsule-dir DIR` · `--fail-on-flake` · `--race`
+`--run-timeout 2m` · `--seeds N` · `--repeat N` · `--capsule-dir DIR` · `--fail-on-flake` · `--race`
 · `-v` · `--debug` (internal error detail) · `--short` (scan with `-short`:
 the target's own short-skipping tests do not spend the budget). `hunt` also
 takes `--changed` ·

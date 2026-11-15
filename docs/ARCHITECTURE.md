@@ -948,7 +948,7 @@ Remaining roadmap items live in the GitHub issue tracker, not in this document.
 |---|---|---|---|
 | R1 | `-shuffle` seed space is huge; an order not found in the seed list | False negative | Default 12 seeds (a 40-seed sweep cost ~12 s/package for no recall gain); raise with `--seeds`; the report says "not found in this range" |
 | R2 | Tests use an external service/DB → reproduction impossible | `ErrNotReproduced` | `status: probabilistic`; warning to the user: "this package uses external dependencies" |
-| R3 | Package contains 200+ tests; one ddmin sweep takes 40s | Budget not enough | Pre-filter with `-run`; `-failfast`; `--seeds 10` on expensive packages |
+| R3 | Package contains 200+ tests; one ddmin sweep takes 40s | Budget not enough | Pre-filter with `-run`; `-failfast`; `--seeds 10` on expensive packages. A package whose own single run exceeds the 2m ceiling is unreachable by every hypothesis — raise it with `--run-timeout`, or the scan reports the package as skipped (exit 7) |
 | R4 | On Windows, `exec`, path, and port behavior differ | Platform bug | MVP: darwin/linux guaranteed; windows best-effort, smoke in CI |
 | R5 | `TestMain` resets global state; harness ineffective | Not findable | `facts.HasTestMain` → report note; the hypothesis is still tried |
 | R6 | The user's `GOFLAGS` injects `-count` or `-mod=vendor` | Silent wrong result | `GOFLAGS` printed to the debug log; `-count` always passed explicitly (last wins) |
