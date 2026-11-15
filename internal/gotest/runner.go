@@ -36,6 +36,16 @@ type Exec struct {
 	// declare testing.Short(). The whole run shares one Exec configuration,
 	// so cached and live results inside one hunt stay consistent.
 	Short bool
+	// RunTimeout overrides domain.DefaultTimeout for every spec that does not
+	// name its own. Same reason as Short: how long one `go test` of the target
+	// may take is a property of the repository, not of a hypothesis.
+	//
+	// Without it a package whose own suite needs more than 120 s can never be
+	// scanned: every hypothesis returns ErrIncomplete and hunt reports the
+	// package as skipped. That is the honest outcome (a run cut in half is a
+	// wrong negative), but it left the operator no knob — the tool's own
+	// subprocess-driven test packages are exactly this shape.
+	RunTimeout time.Duration
 }
 
 func (e *Exec) goBin() string {
@@ -52,6 +62,11 @@ const ctxSlack = 20 * time.Second
 
 // Run executes spec and parses the JSON event stream.
 func (e *Exec) Run(ctx context.Context, spec domain.RunSpec) (*domain.RunResult, error) {
+	// The operator's ceiling fills in before WithDefaults so an explicit
+	// spec.Timeout still wins.
+	if spec.Timeout <= 0 && e.RunTimeout > 0 {
+		spec.Timeout = e.RunTimeout
+	}
 	spec = spec.WithDefaults()
 
 	// Two runs in the same package directory never overlap: the witness file,

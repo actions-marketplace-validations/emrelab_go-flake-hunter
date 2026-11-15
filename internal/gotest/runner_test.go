@@ -227,6 +227,49 @@ func TestShortSeen(t *testing.T) {
 	}
 }
 
+// The operator's per-run ceiling is a runner property, like Short. A spec that
+// names its own must keep it: compile --verify and replay pass explicit values.
+func TestExecRunTimeoutOverride(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: runs real go test")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module timeoutprobe\n\ngo 1.24\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src := "package timeoutprobe\n\nimport \"testing\"\n\nfunc TestOK(t *testing.T) {}\n"
+	if err := os.WriteFile(filepath.Join(dir, "p_test.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	e := &Exec{RunTimeout: 7 * time.Minute}
+	res, err := e.Run(context.Background(), domain.RunSpec{Package: dir})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got, want := res.Spec.Timeout, 7*time.Minute; got != want {
+		t.Errorf("RunTimeout not applied: spec.Timeout = %s, want %s", got, want)
+	}
+
+	// An explicit spec value is the caller's decision, not the operator default.
+	res, err = e.Run(context.Background(), domain.RunSpec{Package: dir, Timeout: 3 * time.Minute})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got, want := res.Spec.Timeout, 3*time.Minute; got != want {
+		t.Errorf("explicit spec.Timeout was overwritten: got %s, want %s", got, want)
+	}
+
+	// Unset on both sides still lands on the documented default.
+	res, err = (&Exec{}).Run(context.Background(), domain.RunSpec{Package: dir})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := res.Spec.Timeout; got != domain.DefaultTimeout {
+		t.Errorf("no override: spec.Timeout = %s, want %s", got, domain.DefaultTimeout)
+	}
+}
+
 func TestAuditC7_DiscoveryAndPatternsPreserveCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

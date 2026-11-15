@@ -37,6 +37,7 @@ type huntOptions struct {
 	seeds       int
 	budget      int
 	timeout     time.Duration
+	runTimeout  time.Duration
 	verbose     bool
 	failOnFlake bool
 	race        bool
@@ -55,7 +56,8 @@ func (o *huntOptions) addFlags(fs *flag.FlagSet) {
 	fs.IntVar(&o.repeat, "repeat", probe.DefaultRepeatCount, "repeat count for -count")
 	fs.StringVar(&o.dir, "capsule-dir", "", "capsule directory (default <pkg>/.go-flake-hunter)")
 	fs.IntVar(&o.seeds, "seeds", 0, "shuffle seed count (0 = default 12)")
-	fs.DurationVar(&o.timeout, "timeout", policy.DefaultMaxWall, "total time budget, checked between runs (0 = default 5m; one in-flight run may overshoot by its own 2m test timeout)")
+	fs.DurationVar(&o.timeout, "timeout", policy.DefaultMaxWall, "total time budget, checked between runs (0 = default 5m; one in-flight run may overshoot by its own --run-timeout)")
+	fs.DurationVar(&o.runTimeout, "run-timeout", 0, "per-run ceiling for one go test (0 = default 2m); raise it for packages whose own suite is slower")
 	fs.IntVar(&o.budget, "budget", policy.DefaultMaxRuns, "total go test run budget (0 = default 1000)")
 	fs.BoolVar(&o.verbose, "v", false, "report every probe in detail")
 	fs.BoolVar(&o.failOnFlake, "fail-on-flake", false, "exit 1 if a flake is found (CI gate)")
@@ -149,7 +151,7 @@ func newScanner(out IO, o huntOptions, only string) *scanner {
 	budget := policy.New(o.budget, o.timeout)
 	// Cache: the shuffle scan is paid once per package, not per test.
 	// 23s -> a few seconds on a 3-test fixture; 10x difference at 30 tests.
-	runner := gotest.NewCache(gotest.Budgeted{Inner: &gotest.Exec{Short: o.short}, Budget: budget}, 0)
+	runner := gotest.NewCache(gotest.Budgeted{Inner: &gotest.Exec{Short: o.short, RunTimeout: o.runTimeout}, Budget: budget}, 0)
 	// The probe set and its cost order live in probe.Default; the CLI only
 	// supplies the flag values. That is what keeps the registry from drifting.
 	registry := probe.Default(probe.Config{
