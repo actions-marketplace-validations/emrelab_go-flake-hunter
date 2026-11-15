@@ -42,10 +42,13 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   now covers the 14 packages that contain the tool. A flake in the harness is
   still caught — by the job that was always the right one for it.
 - The nightly repeat sweep's per-package timeout was a guess at a measured
-  cost: `internal/cli/compile` takes 1509 s at `-count=10` on windows-latest,
-  and the 45m ceiling failed there (`panic: test timed out after 45m0s`) on a
-  loaded runner. Windows now gets 90m; Linux and macOS keep 45m, which they
-  finish well inside.
+  cost. At `-count=10` the full run now takes 18.8m on ubuntu, 30.5m on macOS
+  and 69.3m on windows; the old 45m ceiling failed on windows (`panic: test
+  timed out after 45m0s`) and the 90m that replaced it left only 1.3x headroom
+  against a 2.2x run-to-run variance (the same suite finished in 31m the night
+  before). Windows now gets 120m — 1.7x over the high sample. `-count` stays 10:
+  the 7th-run leak this job exists for lives at count 7-10, so lowering it
+  would trade the signal for the clock.
 - `hunt ./...` no longer abandons the scan on the first package that fails or
   exceeds the per-run timeout. That package is named in the summary
   (`1 of 9 packages (1 skipped)` plus the reason), the remaining packages are

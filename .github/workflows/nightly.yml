@@ -20,20 +20,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The per-package timeout is measured, not guessed. At -count=10 the
-          # slowest package is internal/cli/compile, whose tests spawn `go test`
-          # subprocesses: 1509 s on windows-latest, 967 s for internal/cli/hunt.
-          # 45m sat at 1.8x that and a loaded runner on 2026-11-15 blew through
-          # it (panic: test timed out after 45m0s, three packages at 2700 s).
-          # Linux and macOS finish inside the old ceiling; Windows gets the
-          # headroom instead of a lower -count, because the 7th-run leak this
-          # job exists for lives at count 7-10.
+          # Ceilings are measured, not guessed. Full-run wall time at -count=10
+          # on run 43717279232: ubuntu 18.8m, macos 30.5m, windows 69.3m.
+          # The earlier 45m failed on windows (panic: test timed out after
+          # 45m0s, three packages at 2700s), and 90m left only 1.3x headroom
+          # against a 2.2x run-to-run variance (a previous windows run of the
+          # same suite finished in 31m). 120m is 1.7x over the high sample.
+          # The count stays 10: the 7th-run leak this job exists for lives at
+          # count 7-10, so lowering it would trade the signal for the clock.
           - os: ubuntu-latest
             timeout: 45m
           - os: macos-latest
             timeout: 45m
           - os: windows-latest
-            timeout: 90m
+            timeout: 120m
     runs-on: ${{ matrix.os }}
     defaults:
       run:
