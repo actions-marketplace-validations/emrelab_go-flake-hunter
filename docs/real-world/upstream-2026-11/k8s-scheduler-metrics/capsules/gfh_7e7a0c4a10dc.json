@@ -1,0 +1,87 @@
+{
+  "schema": "go-flake-hunter/v2",
+  "id": "gfh_7e7a0c4a10dc",
+  "createdAt": "2026-11-15T11:18:40.622117+03:00",
+  "repo": {
+    "module": "k8s.io/kubernetes",
+    "commit": "3c690c189e5",
+    "dirty": false
+  },
+  "tool": {
+    "version": "v0.3.0-39-g142b237",
+    "go": "go1.26.2",
+    "targetGo": "go1.27.0",
+    "os": "darwin",
+    "arch": "arm64"
+  },
+  "target": {
+    "package": "k8s.io/kubernetes/pkg/scheduler/metrics",
+    "relDir": "<repo>/pkg/scheduler/metrics",
+    "victim": "TestQueuedEntitiesRecorder",
+    "victimFile": "metric_recorder_test.go",
+    "victimLine": 239
+  },
+  "kind": "order",
+  "witness": {
+    "kind": "order",
+    "victim": {
+      "package": "k8s.io/kubernetes/pkg/scheduler/metrics",
+      "name": "TestQueuedEntitiesRecorder"
+    },
+    "polluters": [
+      {
+        "package": "",
+        "name": "TestInFlightEventAsync"
+      },
+      {
+        "package": "",
+        "name": "TestRecordGeneratedPlacements"
+      }
+    ],
+    "steps": [
+      {
+        "label": "polluter/TestInFlightEventAsync"
+      },
+      {
+        "label": "polluter/TestRecordGeneratedPlacements"
+      },
+      {
+        "label": "victim/TestQueuedEntitiesRecorder"
+      }
+    ],
+    "flags": {
+      "parallel": 1
+    },
+    "runs": 3,
+    "func": "TestFlakeWitness"
+  },
+  "observation": {
+    "runs": 3,
+    "failures": 3,
+    "deterministic": true,
+    "failureRate": 1,
+    "wilson95": {
+      "lower": 0.4385029682449546,
+      "upper": 1
+    }
+  },
+  "evidence": {
+    "externalDependencies": [
+      "clock/timing: time.After",
+      "clock/timing: time.Now",
+      "clock/timing: time.Since",
+      "clock/timing: time.Sleep"
+    ],
+    "globalsRead": {
+      "TestQueuedEntitiesRecorder": [
+        "_"
+      ]
+    }
+  },
+  "repro": {
+    "command": "go-flake-hunter replay \"<capsule-dir>/gfh_7e7a0c4a10dc.json\" --pkg \"<repo>/pkg/scheduler/metrics\" -n 1",
+    "generatedTest": "metric_recorder_TestQueuedEntitiesRecorder_goflakehunter_test.go"
+  },
+  "status": "confirmed",
+  "verifyStatus": "verified"
+}

@@ -1,0 +1,107 @@
+From da9307347b267303e482b308b55dc444a1ea36c8 Mon Sep 17 00:00:00 2001
+From: Roman Baron <romanb@nvidia.com>
+Date: Mon, 5 Oct 2026 15:57:19 +0300
+Subject: [PATCH 1/2] scheduler: deflake metrics tests by not re-initializing
+ globals
+
+---
+ pkg/scheduler/metrics/metrics.go              |  3 +++
+ pkg/scheduler/metrics/profile_metrics_test.go | 14 ++++++++++----
+ 2 files changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/pkg/scheduler/metrics/metrics.go b/pkg/scheduler/metrics/metrics.go
+index 1462f50783dfd..b8c1dbf9d9961 100644
+--- a/pkg/scheduler/metrics/metrics.go
++++ b/pkg/scheduler/metrics/metrics.go
+@@ -276,6 +276,9 @@ func Register() {
+ 	})
+ }
+ 
++// InitMetrics replaces the package-level metric globals with fresh instances.
++// It is called once by Register(); tests should call Register() instead, since
++// re-initializing the globals races with other tests using them.
+ func InitMetrics() {
+ 	scheduleAttempts = metrics.NewCounterVec(
+ 		&metrics.CounterOpts{
+diff --git a/pkg/scheduler/metrics/profile_metrics_test.go b/pkg/scheduler/metrics/profile_metrics_test.go
+index 70d8bf6106b11..e321f7c6888e2 100644
+--- a/pkg/scheduler/metrics/profile_metrics_test.go
++++ b/pkg/scheduler/metrics/profile_metrics_test.go
+@@ -25,9 +25,10 @@ import (
+ )
+ 
+ func TestRecordGeneratedPlacements(t *testing.T) {
+-	InitMetrics()
++	Register()
+ 	registry := metrics.NewKubeRegistry()
+ 	registry.MustRegister(GeneratedPlacementsTotal)
++	GeneratedPlacementsTotal.Reset()
+ 
+ 	RecordGeneratedPlacements("test-profile", PodGroup, 3)
+ 	RecordGeneratedPlacements("test-profile", PodGroup, 2)
+@@ -47,10 +48,12 @@ func TestRecordGeneratedPlacements(t *testing.T) {
+ }
+ 
+ func TestObservePlacementEvaluation(t *testing.T) {
+-	InitMetrics()
++	Register()
+ 	registry := metrics.NewKubeRegistry()
+ 	registry.MustRegister(PlacementEvaluations)
+ 	registry.MustRegister(PlacementEvaluationDuration)
++	PlacementEvaluations.Reset()
++	PlacementEvaluationDuration.Reset()
+ 
+ 	ObservePlacementEvaluation(FeasibleResult, "test-profile", PodGroup, 0.5)
+ 	ObservePlacementEvaluation(FeasibleResult, "test-profile", PodGroup, 0.5)
+@@ -101,9 +104,11 @@ func TestObservePlacementEvaluation(t *testing.T) {
+ }
+ 
+ func TestObservePodGroupScheduleAttemptAndLatency(t *testing.T) {
+-	InitMetrics()
++	Register()
+ 	registry := metrics.NewKubeRegistry()
+ 	registry.MustRegister(PodGroupScheduleAttempts, PodGroupSchedulingLatency)
++	PodGroupScheduleAttempts.Reset()
++	PodGroupSchedulingLatency.Reset()
+ 
+ 	PodGroupScheduled("test-profile", PodGroup, 0.5)
+ 	PodGroupScheduled("test-profile", CompositePodGroup, 0.6)
+@@ -157,9 +162,10 @@ func TestObservePodGroupScheduleAttemptAndLatency(t *testing.T) {
+ }
+ 
+ func TestPodGroupAlgorithmLatency(t *testing.T) {
+-	InitMetrics()
++	Register()
+ 	registry := metrics.NewKubeRegistry()
+ 	registry.MustRegister(PodGroupSchedulingAlgorithmLatency)
++	PodGroupSchedulingAlgorithmLatency.Reset()
+ 
+ 	PodGroupAlgorithmLatency("test-profile", PodGroup, 0.1)
+ 	PodGroupAlgorithmLatency("test-profile", CompositePodGroup, 0.2)
+
+From ba7b70d0563f95e2619376121a4321f80a9f97e1 Mon Sep 17 00:00:00 2001
+From: Roman Baron <91824211+romanbaron@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 14:44:40 +0200
+Subject: [PATCH 2/2] Apply suggestion from @dom4ha
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Co-authored-by: Dominik Marciński <gmidon@gmail.com>
+---
+ pkg/scheduler/metrics/metrics.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/pkg/scheduler/metrics/metrics.go b/pkg/scheduler/metrics/metrics.go
+index b8c1dbf9d9961..fcdf56251980c 100644
+--- a/pkg/scheduler/metrics/metrics.go
++++ b/pkg/scheduler/metrics/metrics.go
+@@ -278,7 +278,7 @@ func Register() {
+ 
+ // InitMetrics replaces the package-level metric globals with fresh instances.
+ // It is called once by Register(); tests should call Register() instead, since
+-// re-initializing the globals races with other tests using them.
++// re-initializing the globals orphans the metrics already registered by Register().
+ func InitMetrics() {
+ 	scheduleAttempts = metrics.NewCounterVec(
+ 		&metrics.CounterOpts{

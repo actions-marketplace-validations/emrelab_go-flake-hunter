@@ -1,0 +1,6 @@
+regression test written: <repo>/pilot/pkg/networking/core/v1alpha3/accesslog_TestListenerAccessLog_goflakehunter_test.go
+run              : go test <repo>/pilot/pkg/networking/core/v1alpha3 -tags goflakehunter -run "^TestFlakeRegression_TestListenerAccessLog$" -count=1 -parallel=1
+verification     : RED (verified — the flake is still there)
+
+Note: the test will be RED right now (the flake is not fixed yet).
+     After the fix it turns green and guards the regression permanently.

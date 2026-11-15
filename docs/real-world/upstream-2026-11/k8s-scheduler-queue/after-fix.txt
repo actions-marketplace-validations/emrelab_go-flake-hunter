@@ -1,0 +1,5 @@
+### generated regression, after the patch
+ok  	k8s.io/kubernetes/pkg/scheduler/backend/queue	0.662s
+
+### -count=5, after the patch
+ok  	k8s.io/kubernetes/pkg/scheduler/backend/queue	0.533s

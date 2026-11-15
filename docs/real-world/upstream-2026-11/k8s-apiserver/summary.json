@@ -1,0 +1,29 @@
+{
+  "repository": "https://github.com/kubernetes/kubernetes.git",
+  "upstream": "https://github.com/kubernetes/kubernetes/pull/144048",
+  "base": "7898e97f1724f72869caa6b354eda92845a6b7f8",
+  "fix": null,
+  "package": "staging/src/k8s.io/apiserver (pkg/cel/metrics, pkg/storage/etcd3/metrics, pkg/storage/value)",
+  "kind": "repeat",
+  "victims": [
+    "TestObserveCompilation",
+    "TestRecordEtcdBookmark"
+  ],
+  "polluters": [],
+  "capsules": [
+    "gfh_3874aa831864",
+    "gfh_54a975bd9f97"
+  ],
+  "replayBefore": "2/2",
+  "flags": "count=10",
+  "compileBefore": "verified (RED)",
+  "before": "go test -count=2: cel and etcd3 FAIL, value panics",
+  "afterFix": "all three packages green at -count=2",
+  "replayAfter": "0/3, exit 3 (both capsules)",
+  "notProved": [
+    "pkg/storage/value TestLogTransformErr: binary panics, no terminal event -> tool reports incomplete, exit 7"
+  ],
+  "tool": "v0.3.0-39-g142b237",
+  "go": "go version go1.26.2 darwin/arm64",
+  "platform": "macOS-27.2-arm64"
+}

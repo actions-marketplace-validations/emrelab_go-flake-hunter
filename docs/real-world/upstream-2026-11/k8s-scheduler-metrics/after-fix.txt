@@ -1,0 +1,85 @@
+### order regression, after the patch (GREEN)
+ok  	k8s.io/kubernetes/pkg/scheduler/metrics	0.451s
+
+### repeat regression, after the patch (still RED)
+--- FAIL: TestFlakeRegression_TestNewMetricsAsyncRecorder (0.00s)
+    --- FAIL: TestFlakeRegression_TestNewMetricsAsyncRecorder/2 (0.00s)
+        metric_recorder_test.go:368: nothing should be buffered or flushed immediately after starting: expected metric to have count 0, got 3
+        metric_recorder_test.go:373: a metric observed immediately after flushing should only be buffered: expected metric to have count 0, got 3
+        metric_recorder_test.go:378: a metric observed during the interval should only be buffered: expected metric to have count 0, got 3
+        metric_recorder_test.go:384: when the interval is reached, buffered metrics should be flushed: expected metric to have count 2, got 5
+        metric_recorder_test.go:390: metrics should be flushed at each interval: expected metric to have count 3, got 6
+        metric_recorder_test.go:395: metrics should continue to be buffered during the last interval: expected metric to have count 3, got 6
+        metric_recorder_test.go:404: buffered metrics are not flushed after stopping: expected metric to have count 3, got 6
+    --- FAIL: TestFlakeRegression_TestNewMetricsAsyncRecorder/3 (0.00s)
+        metric_recorder_test.go:368: nothing should be buffered or flushed immediately after starting: expected metric to have count 0, got 6
+        metric_recorder_test.go:373: a metric observed immediately after flushing should only be buffered: expected metric to have count 0, got 6
+        metric_recorder_test.go:378: a metric observed during the interval should only be buffered: expected metric to have count 0, got 6
+        metric_recorder_test.go:384: when the interval is reached, buffered metrics should be flushed: expected metric to have count 2, got 8
+        metric_recorder_test.go:390: metrics should be flushed at each interval: expected metric to have count 3, got 9
+        metric_recorder_test.go:395: metrics should continue to be buffered during the last interval: expected metric to have count 3, got 9
+        metric_recorder_test.go:404: buffered metrics are not flushed after stopping: expected metric to have count 3, got 9
+    --- FAIL: TestFlakeRegression_TestNewMetricsAsyncRecorder/4 (0.00s)
+        metric_recorder_test.go:368: nothing should be buffered or flushed immediately after starting: expected metric to have count 0, got 9
+        metric_recorder_test.go:373: a metric observed immediately after flushing should only be buffered: expected metric to have count 0, got 9
+        metric_recorder_test.go:378: a metric observed during the interval should only be buffered: expected metric to have count 0, got 9
+        metric_recorder_test.go:384: when the interval is reached, buffered metrics should be flushed: expected metric to have count 2, got 11
+        metric_recorder_test.go:390: metrics should be flushed at each interval: expected metric to have count 3, got 12
+        metric_recorder_test.go:395: metrics should continue to be buffered during the last interval: expected metric to have count 3, got 12
+        metric_recorder_test.go:404: buffered metrics are not flushed after stopping: expected metric to have count 3, got 12
+    --- FAIL: TestFlakeRegression_TestNewMetricsAsyncRecorder/5 (0.00s)
+        metric_recorder_test.go:368: nothing should be buffered or flushed immediately after starting: expected metric to have count 0, got 12
+        metric_recorder_test.go:373: a metric observed immediately after flushing should only be buffered: expected metric to have count 0, got 12
+        metric_recorder_test.go:378: a metric observed during the interval should only be buffered: expected metric to have count 0, got 12
+        metric_recorder_test.go:384: when the interval is reached, buffered metrics should be flushed: expected metric to have count 2, got 14
+        metric_recorder_test.go:390: metrics should be flushed at each interval: expected metric to have count 3, got 15
+        metric_recorder_test.go:395: metrics should continue to be buffered during the last interval: expected metric to have count 3, got 15
+        metric_recorder_test.go:404: buffered metrics are not flushed after stopping: expected metric to have count 3, got 15
+    --- FAIL: TestFlakeRegression_TestNewMetricsAsyncRecorder/6 (0.00s)
+        metric_recorder_test.go:368: nothing should be buffered or flushed immediately after starting: expected metric to have count 0, got 15
+        metric_recorder_test.go:373: a metric observed immediately after flushing should only be buffered: expected metric to have count 0, got 15
+        metric_recorder_test.go:378: a metric observed during the interval should only be buffered: expected metric to have count 0, got 15
+        metric_recorder_test.go:384: when the interval is reached, buffered metrics should be flushed: expected metric to have count 2, got 17
+        metric_recorder_test.go:390: metrics should be flushed at each interval: expected metric to have count 3, got 18
+        metric_recorder_test.go:395: metrics should continue to be buffered during the last interval: expected metric to have count 3, got 18
+        metric_recorder_test.go:404: buffered metrics are not flushed after stopping: expected metric to have count 3, got 18
+    --- FAIL: TestFlakeRegression_TestNewMetricsAsyncRecorder/7 (0.00s)
+        metric_recorder_test.go:368: nothing should be buffered or flushed immediately after starting: expected metric to have count 0, got 18
+        metric_recorder_test.go:373: a metric observed immediately after flushing should only be buffered: expected metric to have count 0, got 18
+        metric_recorder_test.go:378: a metric observed during the interval should only be buffered: expected metric to have count 0, got 18
+        metric_recorder_test.go:384: when the interval is reached, buffered metrics should be flushed: expected metric to have count 2, got 20
+        metric_recorder_test.go:390: metrics should be flushed at each interval: expected metric to have count 3, got 21
+        metric_recorder_test.go:395: metrics should continue to be buffered during the last interval: expected metric to have count 3, got 21
+        metric_recorder_test.go:404: buffered metrics are not flushed after stopping: expected metric to have count 3, got 21
+    --- FAIL: TestFlakeRegression_TestNewMetricsAsyncRecorder/8 (0.00s)
+        metric_recorder_test.go:368: nothing should be buffered or flushed immediately after starting: expected metric to have count 0, got 21
+        metric_recorder_test.go:373: a metric observed immediately after flushing should only be buffered: expected metric to have count 0, got 21
+        metric_recorder_test.go:378: a metric observed during the interval should only be buffered: expected metric to have count 0, got 21
+        metric_recorder_test.go:384: when the interval is reached, buffered metrics should be flushed: expected metric to have count 2, got 23
+        metric_recorder_test.go:390: metrics should be flushed at each interval: expected metric to have count 3, got 24
+        metric_recorder_test.go:395: metrics should continue to be buffered during the last interval: expected metric to have count 3, got 24
+        metric_recorder_test.go:404: buffered metrics are not flushed after stopping: expected metric to have count 3, got 24
+    --- FAIL: TestFlakeRegression_TestNewMetricsAsyncRecorder/9 (0.00s)
+        metric_recorder_test.go:368: nothing should be buffered or flushed immediately after starting: expected metric to have count 0, got 24
+        metric_recorder_test.go:373: a metric observed immediately after flushing should only be buffered: expected metric to have count 0, got 24
+        metric_recorder_test.go:378: a metric observed during the interval should only be buffered: expected metric to have count 0, got 24
+        metric_recorder_test.go:384: when the interval is reached, buffered metrics should be flushed: expected metric to have count 2, got 26
+        metric_recorder_test.go:390: metrics should be flushed at each interval: expected metric to have count 3, got 27
+        metric_recorder_test.go:395: metrics should continue to be buffered during the last interval: expected metric to have count 3, got 27
+        metric_recorder_test.go:404: buffered metrics are not flushed after stopping: expected metric to have count 3, got 27
+    --- FAIL: TestFlakeRegression_TestNewMetricsAsyncRecorder/10 (0.00s)
+        metric_recorder_test.go:368: nothing should be buffered or flushed immediately after starting: expected metric to have count 0, got 27
+        metric_recorder_test.go:373: a metric observed immediately after flushing should only be buffered: expected metric to have count 0, got 27
+        metric_recorder_test.go:378: a metric observed during the interval should only be buffered: expected metric to have count 0, got 27
+        metric_recorder_test.go:384: when the interval is reached, buffered metrics should be flushed: expected metric to have count 2, got 29
+        metric_recorder_test.go:390: metrics should be flushed at each interval: expected metric to have count 3, got 30
+        metric_recorder_test.go:395: metrics should continue to be buffered during the last interval: expected metric to have count 3, got 30
+        metric_recorder_test.go:404: buffered metrics are not flushed after stopping: expected metric to have count 3, got 30
+FAIL
+FAIL	k8s.io/kubernetes/pkg/scheduler/metrics	0.448s
+FAIL
+
+### shuffle 1/2/3 after the patch
+ok  	k8s.io/kubernetes/pkg/scheduler/metrics	0.372s
+ok  	k8s.io/kubernetes/pkg/scheduler/metrics	0.360s
+ok  	k8s.io/kubernetes/pkg/scheduler/metrics	0.372s

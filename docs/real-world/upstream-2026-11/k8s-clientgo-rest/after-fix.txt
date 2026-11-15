@@ -1,0 +1,5 @@
+### generated regression, after the upstream patch
+ok  	k8s.io/client-go/rest	0.448s
+
+### whole package, after the upstream patch
+ok  	k8s.io/client-go/rest	30.759s

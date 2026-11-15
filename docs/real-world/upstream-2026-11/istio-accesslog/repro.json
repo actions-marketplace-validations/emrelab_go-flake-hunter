@@ -1,0 +1,80 @@
+<repo>/pilot/pkg/networking/core/v1alpha3: external dependencies (static, package-wide): clock/timing: time.Now; clock/network/database control is outside go-flake-hunter; reproduction probes still run
+{
+  "schema": "go-flake-hunter/v2",
+  "flakes": [
+    {
+      "schema": "go-flake-hunter/v2",
+      "id": "gfh_1adc5e54f33f",
+      "createdAt": "2026-11-15T11:27:50.79556+03:00",
+      "repo": {
+        "module": "istio.io/istio",
+        "commit": "ac641d0809",
+        "dirty": false
+      },
+      "tool": {
+        "version": "v0.3.0-39-g142b237",
+        "go": "go1.26.2",
+        "targetGo": "go1.26.2",
+        "os": "darwin",
+        "arch": "arm64"
+      },
+      "target": {
+        "package": "istio.io/istio/pilot/pkg/networking/core/v1alpha3",
+        "relDir": ".",
+        "victim": "TestListenerAccessLog",
+        "victimFile": "accesslog_test.go",
+        "victimLine": 54
+      },
+      "kind": "order",
+      "witness": {
+        "kind": "order",
+        "victim": {
+          "package": "istio.io/istio/pilot/pkg/networking/core/v1alpha3",
+          "name": "TestListenerAccessLog"
+        },
+        "polluters": [
+          {
+            "package": "",
+            "name": "TestListenerAccessLogs"
+          }
+        ],
+        "steps": [
+          {
+            "label": "polluter/TestListenerAccessLogs"
+          },
+          {
+            "label": "victim/TestListenerAccessLog"
+          }
+        ],
+        "flags": {
+          "parallel": 1
+        },
+        "runs": 3,
+        "func": "TestFlakeWitness"
+      },
+      "observation": {
+        "runs": 3,
+        "failures": 3,
+        "deterministic": true,
+        "failureRate": 1,
+        "wilson95": {
+          "lower": 0.4385029682449546,
+          "upper": 1
+        }
+      },
+      "evidence": {
+        "externalDependencies": [
+          "clock/timing: time.Now"
+        ]
+      },
+      "repro": {
+        "command": "go-flake-hunter replay \"<capsule-dir>/gfh_1adc5e54f33f.json\" --pkg \"<repo>/pilot/pkg/networking/core/v1alpha3\" -n 1",
+        "generatedTest": "accesslog_TestListenerAccessLog_goflakehunter_test.go"
+      },
+      "status": "confirmed"
+    }
+  ],
+  "runs": 14,
+  "maxRuns": 200,
+  "packages": []
+}

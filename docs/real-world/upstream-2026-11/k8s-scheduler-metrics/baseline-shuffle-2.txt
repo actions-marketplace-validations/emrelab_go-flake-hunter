@@ -1,0 +1,9 @@
+-test.shuffle 2
+--- FAIL: TestQueuedEntitiesRecorder (0.00s)
+        metric_recorder_test.go:333: unexpected metrics Add entity: +# HELP scheduler_pending_pods [STABLE] Number of pending pods, by the queue type. 'active' means number of pods in activeQ; 'backof
+        metric_recorder_test.go:333: unexpected metrics Remove entity: +# HELP scheduler_pending_pods [STABLE] Number of pending pods, by the queue type. 'active' means number of pods in activeQ; 'bac
+        metric_recorder_test.go:333: unexpected metrics Update entity: +# HELP scheduler_pending_pods [STABLE] Number of pending pods, by the queue type. 'active' means number of pods in activeQ; 'bac
+        metric_recorder_test.go:333: unexpected metrics Clear: +# HELP scheduler_pending_pods [STABLE] Number of pending pods, by the queue type. 'active' means number of pods in activeQ; 'backoff' me
+FAIL
+FAIL	k8s.io/kubernetes/pkg/scheduler/metrics	0.451s
+FAIL

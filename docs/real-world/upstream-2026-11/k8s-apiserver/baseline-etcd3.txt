@@ -1,0 +1,8 @@
+--- FAIL: TestRecordEtcdBookmark (0.00s)
+            -etcd_bookmark_total{group="apps",resource="deployments"} 2
+            +etcd_bookmark_total{group="apps",resource="deployments"} 1
+--- FAIL: TestStorageSizeCollector (0.00s)
+panic: duplicate metrics (apiserver_storage_size_bytes) will be not allowed [recovered, repanicked]
+panic({0x100d18a80?, 0x43ea758d910?})
+FAIL	k8s.io/apiserver/pkg/storage/etcd3/metrics	0.327s
+FAIL

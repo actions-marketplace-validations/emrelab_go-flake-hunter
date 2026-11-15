@@ -1,0 +1,14 @@
+--- FAIL: TestAuthPluginWrapTransport (0.00s)
+    plugin_test.go:31: Unexpected error: failed to register pluginA: auth Provider Plugin "pluginA" was registered twice
+    plugin_test.go:34: Unexpected error: failed to register pluginB: auth Provider Plugin "pluginB" was registered twice
+    plugin_test.go:37: Unexpected error: failed to register pluginFail: auth Provider Plugin "pluginFail" was registered twice
+--- FAIL: TestAuthPluginPersist (0.00s)
+    plugin_test.go:100: Unexpected error: failed to register pluginA: auth Provider Plugin "pluginA2" was registered twice
+    plugin_test.go:103: Unexpected error: failed to register pluginPersist: auth Provider Plugin "pluginPersist" was registered twice
+--- FAIL: Test_WhenNilPersister_NoOpPersisterIsAssigned (0.00s)
+    plugin_test.go:177: unexpected error: failed to register 'anyPlugin': auth Provider Plugin "anyPlugin" was registered twice
+--- FAIL: TestThrottledLogger (0.00s)
+    request_test.go:2575: expected 100 log messages, but got 2
+FAIL
+FAIL	k8s.io/client-go/rest	30.744s
+FAIL

@@ -1,0 +1,7 @@
+--- FAIL: TestObserveCompilation (0.00s)
+    metrics_test.go:32: unexpected count: 2
+--- FAIL: TestObserveEvaluation (0.00s)
+    metrics_test.go:44: unexpected count: 2
+FAIL
+FAIL	k8s.io/apiserver/pkg/cel/metrics	0.298s
+FAIL

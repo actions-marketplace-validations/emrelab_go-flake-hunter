@@ -1,0 +1,24 @@
+{
+  "repository": "https://github.com/kubernetes/kubernetes.git",
+  "upstream": "https://github.com/kubernetes/kubernetes/pull/143132",
+  "base": "9b3380ed0f0882068abd7fb9bfbc816c595ae79e",
+  "fix": "f2d7ee76d990f5076fee07726d2acc5be8574d73",
+  "package": "pkg/scheduler/backend/queue",
+  "kind": "repeat",
+  "victims": [
+    "TestPriorityQueue_UpdateNominatedPodForNode"
+  ],
+  "polluters": [],
+  "capsules": [
+    "gfh_6c64368b7e5a"
+  ],
+  "replayBefore": "2/2",
+  "flags": "count=10",
+  "compileBefore": "verified (RED)",
+  "before": "go test -count=5: rounds 2..5 FAIL",
+  "afterFix": "green at -count=5",
+  "replayAfter": "0/3, exit 3",
+  "tool": "v0.3.0-39-g142b237",
+  "go": "go version go1.26.2 darwin/arm64",
+  "platform": "macOS-27.2-arm64"
+}

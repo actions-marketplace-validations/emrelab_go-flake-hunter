@@ -1,0 +1,29 @@
+{
+  "repository": "https://github.com/kubernetes/kubernetes.git",
+  "upstream": "https://github.com/kubernetes/kubernetes/pull/143133",
+  "base": "7898e97f1724f72869caa6b354eda92845a6b7f8",
+  "fix": null,
+  "package": "staging/src/k8s.io/client-go/rest",
+  "kind": "repeat",
+  "victims": [
+    "TestAuthPluginWrapTransport"
+  ],
+  "polluters": [],
+  "capsules": [
+    "gfh_f0726736eb90"
+  ],
+  "replayBefore": "2/2",
+  "flags": "count=10",
+  "compileBefore": "verified (RED)",
+  "before": "go test -count=2 ./rest: 4 tests FAIL",
+  "afterFix": "package green at -count=2",
+  "replayAfter": "0/3, exit 3",
+  "sameRootCauseAlsoRed": [
+    "TestAuthPluginPersist",
+    "Test_WhenNilPersister_NoOpPersisterIsAssigned",
+    "TestThrottledLogger"
+  ],
+  "tool": "v0.3.0-39-g142b237",
+  "go": "go version go1.26.2 darwin/arm64",
+  "platform": "macOS-27.2-arm64"
+}

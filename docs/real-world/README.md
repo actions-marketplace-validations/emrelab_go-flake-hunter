@@ -34,6 +34,36 @@ rather than a re-validation: the flake was already reported by a maintainer, and
 needs. Attribution is recorded in that case's README — the diagnosis is the
 maintainer's, the minimal witness and the patch are not.
 
+## Second wave: five defects at fixed commits (November 15, 2026)
+
+Validated on November 15, 2026, macOS ARM64, Go 1.26.2,
+`v0.3.0-39-g142b237` — seven capsules from four Kubernetes packages and one
+istio package, every one pinned at the base commit of its fix pull request.
+Four of the five are **repeat** class, which the three cases above do not cover:
+upstream Kubernetes CI runs `-count=1`, so those defects are invisible to it.
+
+| Case | Upstream | Class | Minimal witness | After the patch |
+|---|---|---|---|---|
+| [k8s client-go/rest](upstream-2026-11/k8s-clientgo-rest/summary.json) | [#143133](https://github.com/kubernetes/kubernetes/pull/143133) (open) | repeat | `TestAuthPluginWrapTransport` | package green at `-count=2` |
+| [k8s apiserver](upstream-2026-11/k8s-apiserver/summary.json) | [#144048](https://github.com/kubernetes/kubernetes/pull/144048) (open) | repeat | `TestObserveCompilation`, `TestRecordEtcdBookmark` | green; a third package panics — reported, not claimed |
+| [k8s scheduler/queue](upstream-2026-11/k8s-scheduler-queue/summary.json) | [#143132](https://github.com/kubernetes/kubernetes/pull/143132) (merged) | repeat | `TestPriorityQueue_UpdateNominatedPodForNode` | green at `-count=5` |
+| [k8s scheduler/metrics](upstream-2026-11/k8s-scheduler-metrics/summary.json) | [#142680](https://github.com/kubernetes/kubernetes/pull/142680) (merged) | order | `TestInFlightEventAsync` + `TestRecordGeneratedPlacements` → `TestQueuedEntitiesRecorder` | green — one repeat witness survives the patch |
+| [istio accesslog](upstream-2026-11/istio-accesslog/summary.json) | [#39619](https://github.com/istio/istio/issues/39619) → fix [#39624](https://github.com/istio/istio/pull/39624) (merged 2022) | order | `TestListenerAccessLogs` → `TestListenerAccessLog` | green at `-shuffle` 2/3/7 |
+
+The scheduler/metrics case is the one worth reading twice: the merged patch
+removes the shuffle symptom, the order regression turns green, and a **second**
+witness found in the same file (repeat, `TestNewMetricsAsyncRecorder`) stays red
+on the patched tree. That is the permanence claim doing its job — the committed
+regression outlives the fix and names what the fix left behind.
+
+A sixth candidate (cockroachdb/cockroach [#160685](https://github.com/cockroachdb/cockroach/pull/160685))
+is not in the batch: a plain checkout of that commit does not build `./pkg/cli`
+because Cockroach generates its protobuf packages at build time. Blocked, and
+recorded as blocked.
+
+Full narrative, every command and every raw file:
+[upstream-2026-11](upstream-2026-11/README.md).
+
 ## Repeat the validation
 
 From the go-flake-hunter checkout:

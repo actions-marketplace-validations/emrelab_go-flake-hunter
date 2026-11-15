@@ -1,0 +1,28 @@
+{
+  "repository": "https://github.com/istio/istio.git",
+  "upstream": "https://github.com/istio/istio/issues/39619",
+  "fixPr": "https://github.com/istio/istio/pull/39624",
+  "base": "ac641d08093c14ee53a71b7193a7e6a519db8159",
+  "fix": "9f83137301787eea4b3f547ae8e74d862f104c72",
+  "package": "pilot/pkg/networking/core/v1alpha3",
+  "kind": "order",
+  "victims": [
+    "TestListenerAccessLog"
+  ],
+  "polluters": [
+    "TestListenerAccessLogs"
+  ],
+  "capsules": [
+    "gfh_1adc5e54f33f"
+  ],
+  "replayBefore": "3/3",
+  "flags": "parallel=1",
+  "compileBefore": "verified (RED)",
+  "before": "go test -shuffle=2,3: FAIL; -shuffle=1: ok",
+  "afterFix": "-shuffle 2/3/7 green",
+  "replayAfter": "0/3, exit 3",
+  "toolchainNote": "2022 x/net uses go:linkname to syscall.recvmsg; needs -ldflags=-checklinkname=0 on Go 1.23+",
+  "tool": "v0.3.0-39-g142b237",
+  "go": "go version go1.26.2 darwin/arm64",
+  "platform": "macOS-27.2-arm64"
+}
