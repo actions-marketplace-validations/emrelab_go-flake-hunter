@@ -28,12 +28,19 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   (`--timeout`) is checked between runs and never reached. The nightly
   `self-hunt-full` job failed for exactly this reason on three of this repo's
   own subprocess-driven packages (`internal/cli/{compile,hunt,huntci}`, ~85 s
-  per run). The nightly now passes `--run-timeout 10m`. Measured locally on
-  `internal/cli/compile`: before, the package was skipped as `incomplete`
-  within seconds; after, the repeat probe runs and returns "does not explain"
-  and the order probe spends real budget. The residual outcome for those three
-  packages is the documented budget warning (exit 4), which the job turns into
-  a warning rather than a failure.
+  per run). Measured locally on `internal/cli/compile`: before, the package was
+  skipped as `incomplete` within seconds; after, the repeat probe runs and
+  returns "does not explain" and the order probe spends real budget.
+- The nightly self-hunt no longer scans the six test-only `internal/cli/*`
+  packages (`compile`, `hunt`, `huntci`, `huntevidence`, `replay`, `surface`).
+  Raising the per-run ceiling fixed the "incomplete" report but exposed the
+  real cost: those packages spawn `go test` themselves, and a hunt re-runs each
+  of them once per hypothesis and once per shuffle seed. With them included the
+  job spent 57m50s of a 60m wall over 510 runs and still could not finish one of
+  them. They carry no product code (ARCHITECTURE §11.5) and the repeat sweep
+  above already exercises all six at `-count=10` on three OSes, so the hunt
+  now covers the 14 packages that contain the tool. A flake in the harness is
+  still caught — by the job that was always the right one for it.
 - The nightly repeat sweep's per-package timeout was a guess at a measured
   cost: `internal/cli/compile` takes 1509 s at `-count=10` on windows-latest,
   and the 45m ceiling failed there (`panic: test timed out after 45m0s`) on a
