@@ -1,0 +1,65 @@
+{
+  "schema": "go-flake-hunter/v2",
+  "id": "gfh_b0ab94e0e871",
+  "createdAt": "2026-11-15T11:14:09.844002+03:00",
+  "repo": {
+    "module": "k8s.io/kubernetes",
+    "commit": "3c690c189e5",
+    "dirty": false
+  },
+  "tool": {
+    "version": "v0.3.0-39-g142b237",
+    "go": "go1.26.2",
+    "targetGo": "go1.27.0",
+    "os": "darwin",
+    "arch": "arm64"
+  },
+  "target": {
+    "package": "k8s.io/kubernetes/pkg/scheduler/metrics",
+    "relDir": "<repo>/pkg/scheduler/metrics",
+    "victim": "TestNewMetricsAsyncRecorder",
+    "victimFile": "metric_recorder_test.go",
+    "victimLine": 339
+  },
+  "kind": "repeat",
+  "witness": {
+    "kind": "repeat",
+    "victim": {
+      "package": "k8s.io/kubernetes/pkg/scheduler/metrics",
+      "name": "TestNewMetricsAsyncRecorder"
+    },
+    "steps": [
+      {
+        "label": "victim/TestNewMetricsAsyncRecorder"
+      }
+    ],
+    "flags": {
+      "count": 10
+    },
+    "runs": 2
+  },
+  "observation": {
+    "runs": 2,
+    "failures": 2,
+    "deterministic": true,
+    "failureRate": 1,
+    "wilson95": {
+      "lower": 0.34238022750665303,
+      "upper": 1
+    }
+  },
+  "evidence": {
+    "externalDependencies": [
+      "clock/timing: time.After",
+      "clock/timing: time.Now",
+      "clock/timing: time.Since",
+      "clock/timing: time.Sleep"
+    ]
+  },
+  "repro": {
+    "command": "go-flake-hunter replay \"<capsule-dir>/gfh_b0ab94e0e871.json\" --pkg \"<repo>/pkg/scheduler/metrics\" -n 1",
+    "generatedTest": "metric_recorder_TestNewMetricsAsyncRecorder_goflakehunter_test.go"
+  },
+  "status": "confirmed",
+  "verifyStatus": "verified"
+}

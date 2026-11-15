@@ -1,0 +1,76 @@
+<repo>/staging/src/k8s.io/client-go/rest: external dependencies (static, package-wide): clock/timing: time.After; clock/timing: time.NewTimer; clock/timing: time.Now; clock/timing: time.Since; clock/timing: time.Sleep; network: net.Dial; network: net.Listen; clock/network/database control is outside go-flake-hunter; reproduction probes still run
+{
+  "schema": "go-flake-hunter/v2",
+  "flakes": [
+    {
+      "schema": "go-flake-hunter/v2",
+      "id": "gfh_f0726736eb90",
+      "createdAt": "2026-11-15T11:34:53.558271+03:00",
+      "repo": {
+        "module": "k8s.io/client-go",
+        "commit": "7898e97f172",
+        "dirty": false
+      },
+      "tool": {
+        "version": "v0.3.0-39-g142b237",
+        "go": "go1.26.2",
+        "targetGo": "go1.27.3",
+        "os": "darwin",
+        "arch": "arm64"
+      },
+      "target": {
+        "package": "k8s.io/client-go/rest",
+        "relDir": ".",
+        "victim": "TestAuthPluginWrapTransport",
+        "victimFile": "plugin_test.go",
+        "victimLine": 29
+      },
+      "kind": "repeat",
+      "witness": {
+        "kind": "repeat",
+        "victim": {
+          "package": "k8s.io/client-go/rest",
+          "name": "TestAuthPluginWrapTransport"
+        },
+        "steps": [
+          {
+            "label": "victim/TestAuthPluginWrapTransport"
+          }
+        ],
+        "flags": {
+          "count": 10
+        },
+        "runs": 2
+      },
+      "observation": {
+        "runs": 2,
+        "failures": 2,
+        "deterministic": true,
+        "failureRate": 1,
+        "wilson95": {
+          "lower": 0.34238022750665303,
+          "upper": 1
+        }
+      },
+      "evidence": {
+        "externalDependencies": [
+          "clock/timing: time.After",
+          "clock/timing: time.NewTimer",
+          "clock/timing: time.Now",
+          "clock/timing: time.Since",
+          "clock/timing: time.Sleep",
+          "network: net.Dial",
+          "network: net.Listen"
+        ]
+      },
+      "repro": {
+        "command": "go-flake-hunter replay \"<capsule-dir>/gfh_f0726736eb90.json\" --pkg \"<repo>/staging/src/k8s.io/client-go/rest\" -n 1",
+        "generatedTest": "plugin_TestAuthPluginWrapTransport_goflakehunter_test.go"
+      },
+      "status": "confirmed"
+    }
+  ],
+  "runs": 3,
+  "maxRuns": 120,
+  "packages": []
+}

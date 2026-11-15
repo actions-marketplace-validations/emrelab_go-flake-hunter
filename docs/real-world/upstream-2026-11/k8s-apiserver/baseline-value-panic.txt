@@ -1,0 +1,6 @@
+/var/folders/xk/m0yqwf5s4bz9p0jtnjc_0v8c0000gn/T/go-build1407112205/b001/value.test flag redefined: add_dir_header
+--- FAIL: TestLogTransformErr (0.00s)
+panic: /var/folders/xk/m0yqwf5s4bz9p0jtnjc_0v8c0000gn/T/go-build1407112205/b001/value.test flag redefined: add_dir_header [recovered, repanicked]
+panic({0x1013a5380?, 0x1bbca63f6730?})
+FAIL	k8s.io/apiserver/pkg/storage/value	0.357s
+FAIL

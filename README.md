@@ -10,7 +10,7 @@
 > Reproduce the flake in 30 seconds instead of 30 minutes — and leave a permanent regression test in the repo.
 
 246 tests + 2 fuzz targets · CI on linux/macos/windows + a nightly sweep · zero dependencies ·
-three real upstream flake cases reduced to witnesses ([evidence](docs/real-world/README.md))
+eight real upstream flake cases reduced to witnesses ([evidence](docs/real-world/README.md))
 
 Finds flaky Go-test failures caused by **order, parallelism, repetition and
 environment**, shrinks them to the smallest witness (polluter → victim) and
@@ -157,6 +157,23 @@ Commands, exact revisions, capsules and before/after evidence:
 [real-world validation](docs/real-world/README.md). These are targeted
 historical reproductions, not a measurement of detection rate across arbitrary
 repositories. The seven earlier scans below remain recorded as they ran.
+
+### November 15: four Kubernetes packages and istio
+
+Five more upstream defects, each pinned at the base commit of its fix pull
+request. What separates them from the three above: four are **repeat** class,
+which previously had only fixture evidence — `pull-kubernetes-unit` runs
+`-count=1`, so not one of them can appear in upstream CI.
+
+| Repository / pinned commit | Class | Minimal witness | After the upstream patch |
+|---|---|---|---|
+| kubernetes @ `7898e97` ([#143133](https://github.com/kubernetes/kubernetes/pull/143133), open) | repeat | `TestAuthPluginWrapTransport` | package green at `-count=2` |
+| kubernetes @ `7898e97` ([#144048](https://github.com/kubernetes/kubernetes/pull/144048), open) | repeat | `TestObserveCompilation`, `TestRecordEtcdBookmark` | green; a third package panics and is reported, not claimed |
+| kubernetes @ `9b3380e` ([#143132](https://github.com/kubernetes/kubernetes/pull/143132), merged) | repeat | `TestPriorityQueue_UpdateNominatedPodForNode` | green at `-count=5` |
+| kubernetes @ `3c690c1` ([#142680](https://github.com/kubernetes/kubernetes/pull/142680), merged) | order | `TestInFlightEventAsync` + `TestRecordGeneratedPlacements` → `TestQueuedEntitiesRecorder` | green — and a second repeat witness on the same file stays red |
+| istio @ `ac641d0` ([#39619](https://github.com/istio/istio/issues/39619), merged 2022) | order | `TestListenerAccessLogs` → `TestListenerAccessLog` | green at `-shuffle` 2/3/7 |
+
+Capsules and the exact commands: [upstream-2026-11](docs/real-world/upstream-2026-11/README.md).
 
 What a flake hunter should say about a healthy codebase is *nothing* — so the
 first real-world metric is **false positives**, not witnesses:

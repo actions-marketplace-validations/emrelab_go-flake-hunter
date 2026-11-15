@@ -1,0 +1,7 @@
+### generated regression, after the patch
+ok  	istio.io/istio/pilot/pkg/networking/core/v1alpha3	0.846s
+
+### shuffle 2/3/7, after the patch
+ok  	istio.io/istio/pilot/pkg/networking/core/v1alpha3	1.915s
+ok  	istio.io/istio/pilot/pkg/networking/core/v1alpha3	1.760s
+ok  	istio.io/istio/pilot/pkg/networking/core/v1alpha3	1.779s

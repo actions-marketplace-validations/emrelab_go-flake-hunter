@@ -1,0 +1,6 @@
+regression test written: <repo>/pkg/scheduler/backend/queue/scheduling_queue_TestPriorityQueue_UpdateNominatedPodForNode_goflakehunter_test.go
+run              : go test <repo>/pkg/scheduler/backend/queue -tags goflakehunter -run "^TestFlakeRegression_TestPriorityQueue_UpdateNominatedPodForNode$" -count=1
+verification     : RED (verified — the flake is still there)
+
+Note: the test will be RED right now (the flake is not fixed yet).
+     After the fix it turns green and guards the regression permanently.

@@ -1,0 +1,30 @@
+From 0fe045bd259f6b10c9546a7cabb10790a3a2fc99 Mon Sep 17 00:00:00 2001
+From: Anant Kumar <antcybersec@users.noreply.github.com>
+Date: Sat, 17 Oct 2026 15:31:41 +0530
+Subject: [PATCH] scheduler: avoid mutating package-level scheduledPodInfo in
+ test
+
+TestPriorityQueue_UpdateNominatedPodForNode deep-copied
+scheduledPodInfo.Pod into scheduledPodCopy, but then cleared
+scheduledPodInfo.Pod.Spec.NodeName instead of the copy.
+
+This mutated the package-level fixture and caused subsequent runs of
+the test in the same process to fail when running with -count > 1.
+Mutate scheduledPodCopy.Spec.NodeName instead.
+---
+ pkg/scheduler/backend/queue/scheduling_queue_test.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/pkg/scheduler/backend/queue/scheduling_queue_test.go b/pkg/scheduler/backend/queue/scheduling_queue_test.go
+index a110ace8a3310..6b030b3f4b00c 100644
+--- a/pkg/scheduler/backend/queue/scheduling_queue_test.go
++++ b/pkg/scheduler/backend/queue/scheduling_queue_test.go
+@@ -3280,7 +3280,7 @@ func TestPriorityQueue_UpdateNominatedPodForNode(t *testing.T) {
+ 	// Attempt to nominate a pod that was already scheduled in the informer cache.
+ 	// Nothing should change.
+ 	scheduledPodCopy := scheduledPodInfo.Pod.DeepCopy()
+-	scheduledPodInfo.Pod.Spec.NodeName = ""
++	scheduledPodCopy.Spec.NodeName = ""
+ 	q.AddNominatedPod(logger, mustNewTestPodInfo(t, scheduledPodCopy), &fwk.NominatingInfo{NominatingMode: fwk.ModeOverride, NominatedNodeName: "node1"})
+ 	if diff := cmp.Diff(q.nominator, expectedNominatedPods, nominatorCmpOpts...); diff != "" {
+ 		t.Errorf("Unexpected diff after nominating a scheduled pod (-want, +got):\n%s", diff)

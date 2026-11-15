@@ -1,0 +1,74 @@
+<repo>/pkg/scheduler/backend/queue: external dependencies (static, package-wide): clock/timing: time.NewTimer; clock/timing: time.Now; clock/timing: time.Since; clock/timing: time.Sleep; randomness: math/rand.Intn; clock/network/database control is outside go-flake-hunter; reproduction probes still run
+{
+  "schema": "go-flake-hunter/v2",
+  "flakes": [
+    {
+      "schema": "go-flake-hunter/v2",
+      "id": "gfh_6c64368b7e5a",
+      "createdAt": "2026-11-15T11:11:28.996943+03:00",
+      "repo": {
+        "module": "k8s.io/kubernetes",
+        "commit": "9b3380ed0f0",
+        "dirty": false
+      },
+      "tool": {
+        "version": "v0.3.0-39-g142b237",
+        "go": "go1.26.2",
+        "targetGo": "go1.27.0",
+        "os": "darwin",
+        "arch": "arm64"
+      },
+      "target": {
+        "package": "k8s.io/kubernetes/pkg/scheduler/backend/queue",
+        "relDir": ".",
+        "victim": "TestPriorityQueue_UpdateNominatedPodForNode",
+        "victimFile": "scheduling_queue_test.go",
+        "victimLine": 3217
+      },
+      "kind": "repeat",
+      "witness": {
+        "kind": "repeat",
+        "victim": {
+          "package": "k8s.io/kubernetes/pkg/scheduler/backend/queue",
+          "name": "TestPriorityQueue_UpdateNominatedPodForNode"
+        },
+        "steps": [
+          {
+            "label": "victim/TestPriorityQueue_UpdateNominatedPodForNode"
+          }
+        ],
+        "flags": {
+          "count": 10
+        },
+        "runs": 2
+      },
+      "observation": {
+        "runs": 2,
+        "failures": 2,
+        "deterministic": true,
+        "failureRate": 1,
+        "wilson95": {
+          "lower": 0.34238022750665303,
+          "upper": 1
+        }
+      },
+      "evidence": {
+        "externalDependencies": [
+          "clock/timing: time.NewTimer",
+          "clock/timing: time.Now",
+          "clock/timing: time.Since",
+          "clock/timing: time.Sleep",
+          "randomness: math/rand.Intn"
+        ]
+      },
+      "repro": {
+        "command": "go-flake-hunter replay \"<capsule-dir>/gfh_6c64368b7e5a.json\" --pkg \"<repo>/pkg/scheduler/backend/queue\" -n 1",
+        "generatedTest": "scheduling_queue_TestPriorityQueue_UpdateNominatedPodForNode_goflakehunter_test.go"
+      },
+      "status": "confirmed"
+    }
+  ],
+  "runs": 3,
+  "maxRuns": 120,
+  "packages": []
+}

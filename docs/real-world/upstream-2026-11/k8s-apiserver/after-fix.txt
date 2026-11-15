@@ -1,0 +1,8 @@
+### cel/metrics: generated regression, after the patch
+ok  	k8s.io/apiserver/pkg/cel/metrics	0.293s
+
+### etcd3/metrics: generated regression, after the patch
+ok  	k8s.io/apiserver/pkg/storage/etcd3/metrics	0.309s
+
+### storage/value: whole package -count=2, after the patch
+ok  	k8s.io/apiserver/pkg/storage/value	0.316s

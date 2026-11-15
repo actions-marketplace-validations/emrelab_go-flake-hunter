@@ -1,0 +1,63 @@
+{
+  "schema": "go-flake-hunter/v2",
+  "id": "gfh_54a975bd9f97",
+  "createdAt": "2026-11-15T11:44:23.882677+03:00",
+  "repo": {
+    "module": "k8s.io/apiserver",
+    "commit": "7898e97f172",
+    "dirty": false
+  },
+  "tool": {
+    "version": "v0.3.0-39-g142b237",
+    "go": "go1.26.2",
+    "targetGo": "go1.27.0",
+    "os": "darwin",
+    "arch": "arm64"
+  },
+  "target": {
+    "package": "k8s.io/apiserver/pkg/storage/etcd3/metrics",
+    "relDir": "<repo>/staging/src/k8s.io/apiserver/pkg/storage/etcd3/metrics",
+    "victim": "TestRecordEtcdBookmark",
+    "victimFile": "metrics_test.go",
+    "victimLine": 95
+  },
+  "kind": "repeat",
+  "witness": {
+    "kind": "repeat",
+    "victim": {
+      "package": "k8s.io/apiserver/pkg/storage/etcd3/metrics",
+      "name": "TestRecordEtcdBookmark"
+    },
+    "steps": [
+      {
+        "label": "victim/TestRecordEtcdBookmark"
+      }
+    ],
+    "flags": {
+      "count": 10
+    },
+    "runs": 2
+  },
+  "observation": {
+    "runs": 2,
+    "failures": 2,
+    "deterministic": true,
+    "failureRate": 1,
+    "wilson95": {
+      "lower": 0.34238022750665303,
+      "upper": 1
+    }
+  },
+  "evidence": {
+    "externalDependencies": [
+      "clock/timing: time.Now",
+      "clock/timing: time.Since"
+    ]
+  },
+  "repro": {
+    "command": "go-flake-hunter replay \"<capsule-dir>/gfh_54a975bd9f97.json\" --pkg \"<repo>/staging/src/k8s.io/apiserver/pkg/storage/etcd3/metrics\" -n 1",
+    "generatedTest": "metrics_TestRecordEtcdBookmark_goflakehunter_test.go"
+  },
+  "status": "confirmed",
+  "verifyStatus": "verified"
+}

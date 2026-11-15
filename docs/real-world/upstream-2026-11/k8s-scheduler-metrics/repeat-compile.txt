@@ -1,0 +1,6 @@
+regression test written: <repo>/pkg/scheduler/metrics/metric_recorder_TestNewMetricsAsyncRecorder_goflakehunter_test.go
+run              : go test <repo>/pkg/scheduler/metrics -tags goflakehunter -run "^TestFlakeRegression_TestNewMetricsAsyncRecorder$" -count=1
+verification     : RED (verified — the flake is still there)
+
+Note: the test will be RED right now (the flake is not fixed yet).
+     After the fix it turns green and guards the regression permanently.

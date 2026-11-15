@@ -1,0 +1,227 @@
+From cb87c270b63fb0660d63bea17ba435732822ef49 Mon Sep 17 00:00:00 2001
+From: Anant Kumar <antcybersec@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 14:56:31 +0530
+Subject: [PATCH 1/3] apiserver/cel: stop TestObserve* sharing the global CEL
+ histograms
+
+TestObserveCompilation and TestObserveEvaluation observed into the
+package-level Metrics and expected a sample count of 1. Their
+legacyregistry.Reset() did nothing: Reset only calls Reset() on
+registered collectors that have the method, and a plain Histogram does
+not, so the samples survived. A second run in the same binary
+(go test -count=2) saw count 2 and sum 4.
+
+Let newCelMetrics take the registerer so each test can own a CelMetrics
+registered only with its own registry, as other tests under
+pkg/storage do with metrics.NewKubeRegistry.
+
+Signed-off-by: anant <170962632+antcybersec@users.noreply.github.com>
+---
+ .../apiserver/pkg/cel/metrics/metrics.go      | 10 ++++---
+ .../apiserver/pkg/cel/metrics/metrics_test.go | 27 ++++++++++++-------
+ 2 files changed, 23 insertions(+), 14 deletions(-)
+
+diff --git a/staging/src/k8s.io/apiserver/pkg/cel/metrics/metrics.go b/staging/src/k8s.io/apiserver/pkg/cel/metrics/metrics.go
+index 02f232c17c201..2fc604693a4d2 100644
+--- a/staging/src/k8s.io/apiserver/pkg/cel/metrics/metrics.go
++++ b/staging/src/k8s.io/apiserver/pkg/cel/metrics/metrics.go
+@@ -30,14 +30,17 @@ const (
+ )
+ 
+ // Metrics provides access to CEL metrics.
+-var Metrics = newCelMetrics()
++var Metrics = newCelMetrics(legacyregistry.MustRegister)
+ 
+ type CelMetrics struct {
+ 	compilationTime *metrics.Histogram
+ 	evaluationTime  *metrics.Histogram
+ }
+ 
+-func newCelMetrics() *CelMetrics {
++// newCelMetrics builds the CEL metrics and hands them to registerer. Tests pass
++// their own registry's MustRegister, because a Histogram keeps its observations
++// for the lifetime of the process and legacyregistry.Reset cannot clear them.
++func newCelMetrics(registerer func(...metrics.Registerable)) *CelMetrics {
+ 	m := &CelMetrics{
+ 		compilationTime: metrics.NewHistogram(&metrics.HistogramOpts{
+ 			Namespace:      namespace,
+@@ -55,8 +58,7 @@ func newCelMetrics() *CelMetrics {
+ 		}),
+ 	}
+ 
+-	legacyregistry.MustRegister(m.compilationTime)
+-	legacyregistry.MustRegister(m.evaluationTime)
++	registerer(m.compilationTime, m.evaluationTime)
+ 
+ 	return m
+ }
+diff --git a/staging/src/k8s.io/apiserver/pkg/cel/metrics/metrics_test.go b/staging/src/k8s.io/apiserver/pkg/cel/metrics/metrics_test.go
+index 11fb2356309d7..1bb93ec58f16e 100644
+--- a/staging/src/k8s.io/apiserver/pkg/cel/metrics/metrics_test.go
++++ b/staging/src/k8s.io/apiserver/pkg/cel/metrics/metrics_test.go
+@@ -21,13 +21,13 @@ import (
+ 	"testing"
+ 	"time"
+ 
+-	"k8s.io/component-base/metrics/legacyregistry"
++	"k8s.io/component-base/metrics"
+ )
+ 
+ func TestObserveCompilation(t *testing.T) {
+-	defer legacyregistry.Reset()
+-	Metrics.ObserveCompilation(2 * time.Second)
+-	c, s := gatherHistogram(t, "apiserver_cel_compilation_duration_seconds")
++	m, registry := newTestCelMetrics()
++	m.ObserveCompilation(2 * time.Second)
++	c, s := gatherHistogram(t, registry, "apiserver_cel_compilation_duration_seconds")
+ 	if c != 1 {
+ 		t.Errorf("unexpected count: %v", c)
+ 	}
+@@ -37,9 +37,9 @@ func TestObserveCompilation(t *testing.T) {
+ }
+ 
+ func TestObserveEvaluation(t *testing.T) {
+-	defer legacyregistry.Reset()
+-	Metrics.ObserveEvaluation(2 * time.Second)
+-	c, s := gatherHistogram(t, "apiserver_cel_evaluation_duration_seconds")
++	m, registry := newTestCelMetrics()
++	m.ObserveEvaluation(2 * time.Second)
++	c, s := gatherHistogram(t, registry, "apiserver_cel_evaluation_duration_seconds")
+ 	if c != 1 {
+ 		t.Errorf("unexpected count: %v", c)
+ 	}
+@@ -48,12 +48,19 @@ func TestObserveEvaluation(t *testing.T) {
+ 	}
+ }
+ 
+-func gatherHistogram(t *testing.T, name string) (count uint64, sum float64) {
+-	metrics, err := legacyregistry.DefaultGatherer.Gather()
++// newTestCelMetrics returns metrics registered only with the returned registry,
++// so each test observes into histograms nothing else has touched.
++func newTestCelMetrics() (*CelMetrics, metrics.KubeRegistry) {
++	registry := metrics.NewKubeRegistry()
++	return newCelMetrics(registry.MustRegister), registry
++}
++
++func gatherHistogram(t *testing.T, gatherer metrics.Gatherer, name string) (count uint64, sum float64) {
++	metricFamilies, err := gatherer.Gather()
+ 	if err != nil {
+ 		t.Fatalf("Failed to gather metrics: %s", err)
+ 	}
+-	for _, mf := range metrics {
++	for _, mf := range metricFamilies {
+ 		if mf.GetName() == name {
+ 			for _, m := range mf.GetMetric() {
+ 				h := m.GetHistogram()
+
+From ff649cbfe1a1b1245c196eaafa5ab2971afcd8bc Mon Sep 17 00:00:00 2001
+From: Anant Kumar <antcybersec@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 14:56:31 +0530
+Subject: [PATCH 2/3] apiserver/etcd3: reset shared metric state in metrics
+ tests
+
+Two tests in this package left state behind that broke the next run in
+the same binary.
+
+TestRecordEtcdBookmark compares etcd_bookmark_total against an exact
+total, but etcdBookmarkTotal is package level and keeps counting, so a
+second run read 2 where 1 was expected. Reset it on entry and on
+cleanup.
+
+TestStorageSizeCollector handed the package-level storageMonitor to a
+fresh registry. A StableCollector records the descriptors it was
+registered with, so the second registration panicked with "duplicate
+metrics (apiserver_storage_size_bytes) will be not allowed". Clear it
+first, which is what resetStoreStatsMetrics already does for the other
+collectors here.
+
+Signed-off-by: anant <170962632+antcybersec@users.noreply.github.com>
+---
+ .../pkg/storage/etcd3/metrics/metrics_test.go         | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/staging/src/k8s.io/apiserver/pkg/storage/etcd3/metrics/metrics_test.go b/staging/src/k8s.io/apiserver/pkg/storage/etcd3/metrics/metrics_test.go
+index 48e03db9f0593..fd8460be33452 100644
+--- a/staging/src/k8s.io/apiserver/pkg/storage/etcd3/metrics/metrics_test.go
++++ b/staging/src/k8s.io/apiserver/pkg/storage/etcd3/metrics/metrics_test.go
+@@ -93,6 +93,11 @@ apiserver_storage_events_received_total{group="apps",resource="deployments"} 1
+ }
+ 
+ func TestRecordEtcdBookmark(t *testing.T) {
++	// etcdBookmarkTotal is package level and keeps counting across runs in the
++	// same binary, so the expected totals below only hold from a clean start.
++	etcdBookmarkTotal.Reset()
++	t.Cleanup(etcdBookmarkTotal.Reset)
++
+ 	registry := metrics.NewKubeRegistry()
+ 	registry.MustRegister(etcdBookmarkTotal)
+ 
+@@ -290,6 +295,12 @@ etcd_request_errors_total{group="bar",operation="update",reason="Conflict",resou
+ }
+ 
+ func TestStorageSizeCollector(t *testing.T) {
++	// A StableCollector remembers the descriptors it was registered with, so
++	// handing the package level one to a second registry panics with
++	// "duplicate metrics". Clear it first, as resetStoreStatsMetrics does for
++	// the other collectors in this package.
++	storageMonitor.ClearState()
++
+ 	registry := metrics.NewKubeRegistry()
+ 	registry.CustomMustRegister(storageMonitor)
+ 
+
+From aec7ed3f50902d09174e31b398a31421d4b7fee7 Mon Sep 17 00:00:00 2001
+From: Anant Kumar <antcybersec@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 14:56:31 +0530
+Subject: [PATCH 3/3] apiserver/value: bind klog flags to a local set in
+ TestLogTransformErr
+
+The test called klog.InitFlags(nil), which registers klog's flags into
+flag.CommandLine. On a second run in the same binary (go test -count=2)
+that panicked with "flag redefined: add_dir_header". It also raised the
+global klog verbosity to 6 and never put it back.
+
+Bind the flags to a throwaway FlagSet instead. Setting v on it still
+reaches klog's verbosity, so flag.Parse is no longer needed, and the
+value is restored on cleanup.
+
+Signed-off-by: anant <170962632+antcybersec@users.noreply.github.com>
+---
+ .../pkg/storage/value/transformer_test.go       | 17 ++++++++++++++---
+ 1 file changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/staging/src/k8s.io/apiserver/pkg/storage/value/transformer_test.go b/staging/src/k8s.io/apiserver/pkg/storage/value/transformer_test.go
+index 52716adb89007..38142811a04dd 100644
+--- a/staging/src/k8s.io/apiserver/pkg/storage/value/transformer_test.go
++++ b/staging/src/k8s.io/apiserver/pkg/storage/value/transformer_test.go
+@@ -297,7 +297,20 @@ func TestPrefixToMetrics(t *testing.T) {
+ }
+ 
+ func TestLogTransformErr(t *testing.T) {
+-	klog.InitFlags(nil)
++	// klog.InitFlags(nil) installs klog's flags into flag.CommandLine, which
++	// panics with "flag redefined" the second time this runs in one binary.
++	// Bind them to a throwaway set instead; setting v on it still reaches
++	// klog's verbosity, so no flag.Parse is needed.
++	fs := flag.NewFlagSet("klog", flag.ContinueOnError)
++	klog.InitFlags(fs)
++	if err := fs.Set("v", "6"); err != nil {
++		t.Fatalf("failed to set klog verbosity: %v", err)
++	}
++	t.Cleanup(func() {
++		if err := fs.Set("v", "0"); err != nil {
++			t.Errorf("failed to restore klog verbosity: %v", err)
++		}
++	})
+ 	tests := []struct {
+ 		name        string
+ 		ctx         context.Context
+@@ -332,8 +345,6 @@ func TestLogTransformErr(t *testing.T) {
+ 	for _, tt := range tests {
+ 		t.Run(tt.name, func(t *testing.T) {
+ 			var buf bytes.Buffer
+-			flag.Set("v", "6")
+-			flag.Parse()
+ 			klog.SetOutput(&buf)
+ 			klog.LogToStderr(false)
+ 			defer klog.LogToStderr(true)

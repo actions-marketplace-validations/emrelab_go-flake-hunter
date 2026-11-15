@@ -1,0 +1,143 @@
+--- FAIL: TestPriorityQueue_UpdateNominatedPodForNode (0.00s)
+    scheduling_queue_test.go:3286: Unexpected diff after nominating a scheduled pod (-want, +got):
+          &queue.nominator{
+          	... // 2 ignored fields
+          	nominatedPods: map[string][]queue.podRef{
+          		"node1": {
+          			{name: "mpp", namespace: "ns2", uid: "mppns2"},
+        - 			{name: "sp", namespace: "ns1", uid: "spns1"},
+          		},
+          		"node4": {{name: "hpp", namespace: "ns1", uid: "hppns1"}},
+          		"node5": {{name: "up", namespace: "ns1", uid: "upns1"}},
+          	},
+          	nominatedPodToNode: map[types.UID]string{
+          		"hppns1": "node4",
+          		"mppns2": "node1",
+        - 		"spns1":  "node1",
+          		"upns1":  "node5",
+          	},
+          }
+    scheduling_queue_test.go:3303: Unexpected diff after deleting pods (-want, +got):
+          &queue.nominator{
+          	... // 2 ignored fields
+          	nominatedPods: map[string][]queue.podRef{
+          		"node1": {
+          			{name: "mpp", namespace: "ns2", uid: "mppns2"},
+        - 			{name: "sp", namespace: "ns1", uid: "spns1"},
+          		},
+          		"node5": {{name: "up", namespace: "ns1", uid: "upns1"}},
+          	},
+          	nominatedPodToNode: map[types.UID]string{
+          		"mppns2": "node1",
+        - 		"spns1":  "node1",
+          		"upns1":  "node5",
+          	},
+          }
+--- FAIL: TestPriorityQueue_UpdateNominatedPodForNode (0.00s)
+    scheduling_queue_test.go:3286: Unexpected diff after nominating a scheduled pod (-want, +got):
+          &queue.nominator{
+          	... // 2 ignored fields
+          	nominatedPods: map[string][]queue.podRef{
+          		"node1": {
+          			{name: "mpp", namespace: "ns2", uid: "mppns2"},
+        - 			{name: "sp", namespace: "ns1", uid: "spns1"},
+          		},
+          		"node4": {{name: "hpp", namespace: "ns1", uid: "hppns1"}},
+          		"node5": {{name: "up", namespace: "ns1", uid: "upns1"}},
+          	},
+          	nominatedPodToNode: map[types.UID]string{
+          		"hppns1": "node4",
+          		"mppns2": "node1",
+        - 		"spns1":  "node1",
+          		"upns1":  "node5",
+          	},
+          }
+    scheduling_queue_test.go:3303: Unexpected diff after deleting pods (-want, +got):
+          &queue.nominator{
+          	... // 2 ignored fields
+          	nominatedPods: map[string][]queue.podRef{
+          		"node1": {
+          			{name: "mpp", namespace: "ns2", uid: "mppns2"},
+        - 			{name: "sp", namespace: "ns1", uid: "spns1"},
+          		},
+          		"node5": {{name: "up", namespace: "ns1", uid: "upns1"}},
+          	},
+          	nominatedPodToNode: map[types.UID]string{
+          		"mppns2": "node1",
+        - 		"spns1":  "node1",
+          		"upns1":  "node5",
+          	},
+          }
+--- FAIL: TestPriorityQueue_UpdateNominatedPodForNode (0.00s)
+    scheduling_queue_test.go:3286: Unexpected diff after nominating a scheduled pod (-want, +got):
+          &queue.nominator{
+          	... // 2 ignored fields
+          	nominatedPods: map[string][]queue.podRef{
+          		"node1": {
+          			{name: "mpp", namespace: "ns2", uid: "mppns2"},
+        - 			{name: "sp", namespace: "ns1", uid: "spns1"},
+          		},
+          		"node4": {{name: "hpp", namespace: "ns1", uid: "hppns1"}},
+          		"node5": {{name: "up", namespace: "ns1", uid: "upns1"}},
+          	},
+          	nominatedPodToNode: map[types.UID]string{
+          		"hppns1": "node4",
+          		"mppns2": "node1",
+        - 		"spns1":  "node1",
+          		"upns1":  "node5",
+          	},
+          }
+    scheduling_queue_test.go:3303: Unexpected diff after deleting pods (-want, +got):
+          &queue.nominator{
+          	... // 2 ignored fields
+          	nominatedPods: map[string][]queue.podRef{
+          		"node1": {
+          			{name: "mpp", namespace: "ns2", uid: "mppns2"},
+        - 			{name: "sp", namespace: "ns1", uid: "spns1"},
+          		},
+          		"node5": {{name: "up", namespace: "ns1", uid: "upns1"}},
+          	},
+          	nominatedPodToNode: map[types.UID]string{
+          		"mppns2": "node1",
+        - 		"spns1":  "node1",
+          		"upns1":  "node5",
+          	},
+          }
+--- FAIL: TestPriorityQueue_UpdateNominatedPodForNode (0.00s)
+    scheduling_queue_test.go:3286: Unexpected diff after nominating a scheduled pod (-want, +got):
+          &queue.nominator{
+          	... // 2 ignored fields
+          	nominatedPods: map[string][]queue.podRef{
+          		"node1": {
+          			{name: "mpp", namespace: "ns2", uid: "mppns2"},
+        - 			{name: "sp", namespace: "ns1", uid: "spns1"},
+          		},
+          		"node4": {{name: "hpp", namespace: "ns1", uid: "hppns1"}},
+          		"node5": {{name: "up", namespace: "ns1", uid: "upns1"}},
+          	},
+          	nominatedPodToNode: map[types.UID]string{
+          		"hppns1": "node4",
+          		"mppns2": "node1",
+        - 		"spns1":  "node1",
+          		"upns1":  "node5",
+          	},
+          }
+    scheduling_queue_test.go:3303: Unexpected diff after deleting pods (-want, +got):
+          &queue.nominator{
+          	... // 2 ignored fields
+          	nominatedPods: map[string][]queue.podRef{
+          		"node1": {
+          			{name: "mpp", namespace: "ns2", uid: "mppns2"},
+        - 			{name: "sp", namespace: "ns1", uid: "spns1"},
+          		},
+          		"node5": {{name: "up", namespace: "ns1", uid: "upns1"}},
+          	},
+          	nominatedPodToNode: map[types.UID]string{
+          		"mppns2": "node1",
+        - 		"spns1":  "node1",
+          		"upns1":  "node5",
+          	},
+          }
+FAIL
+FAIL	k8s.io/kubernetes/pkg/scheduler/backend/queue	0.570s
+FAIL

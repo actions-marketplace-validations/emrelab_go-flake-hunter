@@ -6,6 +6,20 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Evidence
+- Five upstream defects pinned at the base commit of their fix pull request:
+  four Kubernetes packages (`client-go/rest`, `apiserver`, `scheduler/queue`,
+  `scheduler/metrics`) and istio's `accesslog` package. Seven capsules, every
+  one `repo.dirty: false` and `verifyStatus: verified` — the generated
+  regression was run and was red before the patch, green after. Four of the
+  five are **repeat** class, which had fixture evidence only until now:
+  `pull-kubernetes-unit` runs `-count=1`, so none of them can surface in
+  upstream CI. One case reports a defect the merged patch does not close
+  (`TestNewMetricsAsyncRecorder` stays red at `-count=2` on the patched
+  scheduler/metrics tree). A sixth candidate (cockroachdb/cockroach#160685) is
+  blocked: a plain checkout does not build `./pkg/cli` without
+  `./dev generate go`. Files under `docs/real-world/upstream-2026-11/`.
+
 ### Fixes
 - `hunt ./...` no longer abandons the scan on the first package that fails or
   exceeds the per-run timeout. That package is named in the summary
