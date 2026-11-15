@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -54,7 +55,7 @@ func (o *huntOptions) addFlags(fs *flag.FlagSet) {
 	fs.IntVar(&o.repeat, "repeat", probe.DefaultRepeatCount, "repeat count for -count")
 	fs.StringVar(&o.dir, "capsule-dir", "", "capsule directory (default <pkg>/.go-flake-hunter)")
 	fs.IntVar(&o.seeds, "seeds", 0, "shuffle seed count (0 = default 12)")
-	fs.DurationVar(&o.timeout, "timeout", policy.DefaultMaxWall, "total time budget (0 = default 5m)")
+	fs.DurationVar(&o.timeout, "timeout", policy.DefaultMaxWall, "total time budget, checked between runs (0 = default 5m; one in-flight run may overshoot by its own 2m test timeout)")
 	fs.IntVar(&o.budget, "budget", policy.DefaultMaxRuns, "total go test run budget (0 = default 1000)")
 	fs.BoolVar(&o.verbose, "v", false, "report every probe in detail")
 	fs.BoolVar(&o.failOnFlake, "fail-on-flake", false, "exit 1 if a flake is found (CI gate)")
@@ -119,7 +120,21 @@ type scanner struct {
 	// collected holds the capsules a json run emits at the end. A streaming
 	// pretty-printer would produce one object per capsule — not JSON.
 	collected []domain.Capsule
-	cwd       string
+	results   []domain.PackageResult
+	broken    bool
+	// skipped names the packages this scan could not finish ("dir: reason").
+	// A verdict that silently drops a third of the repository is the false
+	// clean this project exists to prevent, so the summary has to carry them.
+	skipped []string
+	cwd     string
+	// scanned counts the tests this run examined; the clean-scan summary is
+	// one line per probe, so the count has to come from here, not from the
+	// per-test blocks that no longer print (B13).
+	scanned int
+	started time.Time
+	// tallies aggregate each probe's verdicts across tests for that summary.
+	tallies    map[string]*probeTally
+	tallyOrder []string
 	// gitState memoizes the repo provenance per package directory: every
 	// capsule a package yields shares it, and asking git again per capsule
 	// doubled the subprocess count for no new information.
@@ -143,7 +158,88 @@ func newScanner(out IO, o huntOptions, only string) *scanner {
 		PolluterDir: o.polluterDir,
 	})
 	cwd, _ := os.Getwd()
-	return &scanner{o: o, out: out, registry: registry, runner: runner, budget: budget, only: only, cwd: cwd}
+	return &scanner{o: o, out: out, registry: registry, runner: runner, budget: budget, only: only, cwd: cwd, started: time.Now()}
+}
+
+// probeTally is one probe's verdicts across every test in the scan.
+type probeTally struct {
+	tried     int // ran, produced no evidence
+	explained int // ran, found the witness
+	skipped   int // ruled out statically, no build spent
+}
+
+func (s *scanner) tallyFor(name string) *probeTally {
+	t := s.tallies[name]
+	if t == nil {
+		t = &probeTally{}
+		if s.tallies == nil {
+			s.tallies = map[string]*probeTally{}
+		}
+		s.tallies[name] = t
+		s.tallyOrder = append(s.tallyOrder, name)
+	}
+	return t
+}
+
+func (s *scanner) noteAttempts(res *probe.Result) {
+	if res == nil {
+		return
+	}
+	for _, a := range res.Tried {
+		t := s.tallyFor(a.Probe)
+		switch {
+		case a.Skipped:
+			t.skipped++
+		case a.Err == nil:
+			t.explained++
+		default:
+			t.tried++
+		}
+	}
+}
+
+// writeCleanSummary answers "did it look, and where" in one block regardless of
+// test count: a clean 100-test package used to print six lines per test, which
+// buried the verdict. Per-test detail stays behind -v.
+func (s *scanner) writeCleanSummary(w io.Writer, packages int) {
+	noun := "packages"
+	if packages == 1 {
+		noun = "package"
+	}
+	scope := fmt.Sprintf("%d %s", packages, noun)
+	if n := len(s.skipped); n > 0 {
+		// The verdict covers what ran. "N packages" over a scan that lost one
+		// reads as a complete clean, which is the one claim this tool must
+		// never make by accident.
+		scope = fmt.Sprintf("%d of %d %s (%d skipped)", packages-n, packages, noun, n)
+	}
+	// Zero scanned packages is not a clean scan: say that nothing was judged.
+	headline := "flake not found"
+	if packages-len(s.skipped) == 0 {
+		headline = "no package could be scanned"
+	}
+	_, _ = fmt.Fprintf(w, "%s: %d tests in %s, %d/%d runs, %s\n",
+		headline, s.scanned, scope, s.budget.Runs(), s.budget.MaxRuns,
+		time.Since(s.started).Round(time.Millisecond))
+	for _, name := range s.tallyOrder {
+		t := s.tallies[name]
+		_, _ = fmt.Fprintf(w, "  %-9s ", name)
+		if t.tried+t.explained == 0 {
+			_, _ = fmt.Fprintf(w, "not applicable %d\n", t.skipped)
+			continue
+		}
+		_, _ = fmt.Fprintf(w, "tried %d, explained %d", t.tried+t.explained, t.explained)
+		if t.skipped > 0 {
+			_, _ = fmt.Fprintf(w, ", not applicable %d", t.skipped)
+		}
+		_, _ = fmt.Fprintln(w)
+	}
+	if len(s.skipped) > 0 {
+		_, _ = fmt.Fprintf(w, "  skipped, not scanned to the end (exit %d):\n", domain.ExitPackageFailed)
+		for _, sk := range s.skipped {
+			_, _ = fmt.Fprintf(w, "    %s\n", sk)
+		}
+	}
 }
 
 // emit renders or collects one capsule.
@@ -166,7 +262,7 @@ func (s *scanner) emit(c domain.Capsule) error {
 func (s *scanner) flush() error {
 	switch s.o.format {
 	case "json":
-		if err := report.JSONRun(s.out.Stdout, s.collected, s.budget.Runs(), s.budget.MaxRuns); err != nil {
+		if err := report.JSONRun(s.out.Stdout, s.collected, s.budget.Runs(), s.budget.MaxRuns, s.results); err != nil {
 			return err
 		}
 	case "sarif":
@@ -179,7 +275,9 @@ func (s *scanner) flush() error {
 		if err != nil {
 			return fmt.Errorf("sarif file: %w", err)
 		}
-		defer f.Close()
+		// A close failure after a successful write is not actionable: the
+		// SARIF document already reached the file. Say so instead of hiding it.
+		defer func() { _ = f.Close() }()
 		return report.SARIF(f, s.collected, Version)
 	}
 	return nil
@@ -221,6 +319,7 @@ func (s *scanner) pkg(ctx context.Context, pkgArg string) error {
 		return domain.Wrap(domain.ErrUsage, "%s is not a directory", pkgArg)
 	}
 	relDir := s.relDir(dir)
+	tags := gotest.BuildTags(ctx, dir)
 
 	// Crash leftover: if the previous run was killed, a witness file remains
 	// and breaks every build in this package.
@@ -232,6 +331,9 @@ func (s *scanner) pkg(ctx context.Context, pkgArg string) error {
 	// witness installed in between would enter the list as a user-owned test.
 	lockCtx, unlock, lerr := policy.Locked(ctx, dir)
 	if lerr != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return domain.Wrap(domain.ErrInternal, "could not acquire lock: %v", lerr)
 	}
 	if removed, err := cleanupWitnesses(dir); err == nil && len(removed) > 0 && s.o.verbose {
@@ -254,24 +356,49 @@ func (s *scanner) pkg(ctx context.Context, pkgArg string) error {
 		return nil
 	}
 
-	pkgFacts, err := facts.Scan(dir)
+	files, err := gotest.PackageFiles(ctx, dir, tags)
+	if err != nil {
+		return err
+	}
+	pkgFacts, err := facts.Scan(dir, files)
 	if err != nil {
 		return domain.Wrap(domain.ErrUsage, "could not read %s", pkgArg)
 	}
 
 	if len(pkgFacts.ExternalDependencies) > 0 {
-		fmt.Fprintf(s.out.Stderr, "%s: external dependencies (static, package-wide): %s; clock/network/database control is outside go-flake-hunter; reproduction probes still run\n", pkgArg, strings.Join(pkgFacts.ExternalDependencies, "; "))
+		_, _ = fmt.Fprintf(s.out.Stderr, "%s: external dependencies (static, package-wide): %s; clock/network/database control is outside go-flake-hunter; reproduction probes still run\n", pkgArg, strings.Join(pkgFacts.ExternalDependencies, "; "))
 	}
 	for _, t := range tests {
+		s.scanned++
 		res, err := s.registry.Run(ctx, probe.Target{Test: t, Dir: dir, Facts: pkgFacts}, s.runner)
+		s.noteAttempts(res)
 		switch {
+		case errors.Is(err, domain.ErrBrokenTest):
+			s.broken = true
+			s.results = append(s.results, domain.PackageResult{Package: t.Package, Test: t.Name, Status: domain.RunBroken})
+			writer := s.out.Stdout
+			if s.o.format == "json" || s.o.format == "sarif" {
+				writer = s.out.Stderr
+			}
+			_, _ = fmt.Fprintf(writer, "%s:%s: broken (fails in isolation)\n", t.Package, t.Name)
+			continue
+		case errors.Is(err, domain.ErrPackageFailed):
+			s.results = append(s.results, domain.PackageResult{Package: t.Package, Test: t.Name, Status: domain.RunPackageFailed})
+			return err
+		case errors.Is(err, domain.ErrIncomplete):
+			s.results = append(s.results, domain.PackageResult{Package: t.Package, Test: t.Name, Status: domain.RunIncomplete})
+			return err
 		case errors.Is(err, domain.ErrNotReproducible) && res != nil && res.Suspected != nil:
 			res.Witness = res.Suspected
 		case errors.Is(err, probe.ErrNotReproduced):
 			// Always write: "no flake" alone hides the difference between
 			// "nothing is wrong" and "this probe cannot see this class".
-			// The user must see what was tried.
-			writeNoFlake(s.out, s.o, t, res)
+			// The user must see what was tried. A full scan aggregates the
+			// same fact into one block at the end (B13); a single asked-about
+			// test (repro, --only) keeps its own detail.
+			if s.o.verbose || s.only != "" {
+				writeNoFlake(s.out, s.o, t, res)
+			}
 			continue
 		case stopped(ctx, err):
 			// Budget/cancel: not finding the thing is not an answer, it is an
@@ -301,13 +428,19 @@ func (s *scanner) pkg(ctx context.Context, pkgArg string) error {
 			note = raceNote
 		}
 
+		res.Witness.Flags.Short = s.o.short
+		res.Witness.Flags.Tags = tags
 		c := buildCapsule(res.Witness, dir, s.repoStateFor(ctx, dir), pkgFacts, relDir, s.polluterRel())
+		c.Tool.TargetGo = gotest.TargetGoVersion(ctx, dir)
 		c.Note = note
+		if c.Witness.Flags.Race {
+			c.Note = "witness reproduced under -race"
+		}
 		if c.Status == domain.StatusSuspected {
 			c.Note = "partial reproduction; not confirmed and excluded from the CI flake gate and baseline"
-			c.Repro.Command = fmt.Sprintf("go-flake-hunter replay %s --pkg %s --capsule-dir %s -n 10", c.ID, quoteArg(dir), quoteArg(capsuleDir(s.o.dir, dir)))
 		}
 		store := capsule.NewStore(capsuleDir(s.o.dir, dir))
+		c.Repro.Command = reproCommand(c, store.Path(c.ID), dir, s.o.polluterDir)
 		path, err := store.Write(c)
 		if err != nil {
 			return err
@@ -334,7 +467,7 @@ func (s *scanner) pkg(ctx context.Context, pkgArg string) error {
 			return err
 		}
 		if s.o.verbose {
-			_, _ = fmt.Fprintf(s.out.Stdout, "\n  written: %s\n", path)
+			_, _ = fmt.Fprintf(s.out.Stderr, "\n  written: %s\n", path)
 		}
 	}
 	return nil
@@ -348,7 +481,7 @@ func (s *scanner) pkg(ctx context.Context, pkgArg string) error {
 // the caller asked a question and did not get an answer.
 func (s *scanner) outcome(notFoundIsError bool) error {
 	switch {
-	case s.fresh > 0 && s.o.failOnFlake:
+	case (s.fresh > 0 || s.broken) && s.o.failOnFlake:
 		return domain.ErrFlakeFound
 	case s.found > 0:
 		return nil
@@ -370,6 +503,15 @@ func writeCapsule(out IO, format string, c domain.Capsule) error {
 		return report.Text(out.Stdout, c)
 	default:
 		return domain.Wrap(domain.ErrUsage, "unknown format %q (text|json|markdown|sarif — sarif is a run format, see hunt)", format)
+	}
+}
+
+func validateRunFormat(format string) error {
+	switch format {
+	case "", "text", "json", "markdown", "md", "sarif":
+		return nil
+	default:
+		return domain.Wrap(domain.ErrUsage, "unknown format %q (text|json|markdown|sarif)", format)
 	}
 }
 
@@ -416,6 +558,9 @@ func hunt(ctx context.Context, args []string, out IO) error {
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
+	if err := validateRunFormat(o.format); err != nil {
+		return err
+	}
 	if jobs < 1 {
 		return domain.Wrap(domain.ErrUsage, "--jobs must be positive")
 	}
@@ -452,6 +597,12 @@ func hunt(ctx context.Context, args []string, out IO) error {
 	}
 
 	s := newScanner(out, o, "")
+	if baselinePath == "" {
+		path := capsule.DefaultBaselinePath(s.cwd)
+		if writeBaseline || !baselineMissing(path) {
+			baselinePath = path
+		}
+	}
 	// The baseline loads BEFORE the scan: if the file is corrupt, say it now,
 	// not after a 10-second scan.
 	if baselinePath != "" && !writeBaseline {
@@ -480,11 +631,16 @@ func hunt(ctx context.Context, args []string, out IO) error {
 	if err := s.flush(); err != nil {
 		return err
 	}
-	if runErr != nil {
+	// A package-scoped failure is a verdict about that package: the rest of the
+	// scan ran and its output belongs to the user, so the error is returned
+	// below the summary instead of here. A global failure (budget, cancel,
+	// usage) is not a scan result. --write-baseline never records a scan that
+	// lost a package.
+	if runErr != nil && (!packageScoped(runErr) || writeBaseline) {
 		return runErr
 	}
 	if writeBaseline {
-		return writeBaselineFile(out, s, baselinePath)
+		return writeBaselineFile(ctx, out, s, baselinePath)
 	}
 	// One summary line: the answer to "why is the gate green" must appear in
 	// the report, or the user thinks the flake was not found.
@@ -492,7 +648,18 @@ func hunt(ctx context.Context, args []string, out IO) error {
 		_, _ = fmt.Fprintf(out.Stderr, "baseline: %d known, %d new\n",
 			s.found-s.fresh, s.fresh)
 	}
-	return s.outcome(false)
+	// A clean scan is a verdict, not N test-by-test reports: one block, then
+	// exit. -v keeps the per-test detail for "what did it actually try".
+	if (o.format == "" || o.format == "text") && !o.verbose && s.found == 0 && !s.broken {
+		s.writeCleanSummary(out.Stdout, len(dirs))
+	}
+	// The gate speaks first: a run that found a flake has something to act on
+	// even when another package was skipped. Otherwise the skipped packages
+	// decide the exit code — a partial scan is never a clean one.
+	if err := s.outcome(false); err != nil {
+		return err
+	}
+	return runErr
 }
 
 // writeBaselineFile records this run's ids, keeping the ones already known.
@@ -503,10 +670,17 @@ func hunt(ctx context.Context, args []string, out IO) error {
 //
 // The gate is CLOSED for this run: a run that writes the baseline judging
 // itself by the very list it wrote is circular.
-func writeBaselineFile(out IO, s *scanner, path string) error {
-	if path == "" {
-		path = capsule.DefaultBaselinePath(s.cwd)
+func writeBaselineFile(ctx context.Context, out IO, s *scanner, path string) error {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return err
 	}
+	path = filepath.Join(canonical(filepath.Dir(path)), filepath.Base(path))
+	_, unlock, err := policy.Locked(ctx, path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	ids := append([]string(nil), s.ids...)
 	if existing, err := capsule.LoadBaseline(path); err == nil {
 		ids = append(ids, existing.IDs...)
@@ -546,6 +720,7 @@ func (s *scanner) writePartial(ctx context.Context, t domain.TestID, dir, relDir
 
 	note := partialNote(cause, s.o)
 	c := buildPartialCapsule(t, s.repoStateFor(ctx, dir), relDir, note)
+	c.Tool.TargetGo = gotest.TargetGoVersion(ctx, dir)
 
 	infos := attemptInfos(res)
 	path, err := capsule.NewStore(capsuleDir(s.o.dir, dir)).Write(c)
@@ -565,7 +740,13 @@ func (s *scanner) writePartial(ctx context.Context, t domain.TestID, dir, relDir
 	if s.o.format == "json" || s.o.format == "sarif" {
 		// The single document is written by flush; the note belongs on stderr
 		// so the artifact stays clean.
-		_, _ = fmt.Fprintf(s.out.Stderr, "%s: %s\n", c.Target.Victim, c.Note)
+		_, _ = fmt.Fprintf(s.out.Stderr, "%s: inconclusive (%s)\n", c.Target.Victim, c.Note)
+		return cause
+	}
+	if s.o.format == "markdown" {
+		if err := report.Markdown(s.out.Stdout, c); err != nil {
+			return err
+		}
 		return cause
 	}
 	if err := report.Partial(s.out.Stdout, c, infos, path, partialHint(cause)); err != nil {
@@ -682,7 +863,6 @@ func buildCapsule(w *domain.Witness, dir string, st repoState, f facts.PkgFacts,
 	}
 	c.Witness.Steps = stepsFor(w)
 	c.ID = capsule.ID(c.Witness, st.Module, st.Commit)
-	c.Repro.Command = reproCommand(c)
 	c.Repro.GeneratedTest = compile.OutputName(dir, targetSourceFile(dir, w.Victim.Name), w.Victim.Name)
 	if c.Status != domain.StatusConfirmed || w.CrossClause || w.CrossBinary {
 		c.Repro.GeneratedTest = ""
@@ -727,80 +907,15 @@ func stepsFor(w *domain.Witness) []domain.Step {
 	return steps
 }
 
-// reproCommand is the exact shell line that reproduces the flake.
-//
-// Every branch is derived from the witness, never hardcoded: a parallel
-// witness replayed with -parallel=1 executes its subtests one after another
-// and proves nothing, which is the worst possible artifact — a command that
-// looks right and reports "passed".
-func reproCommand(c domain.Capsule) string {
-	dir := c.Target.RelDir
-	if dir == "" {
-		dir = "."
+func reproCommand(c domain.Capsule, path, dir, polluterDir string) string {
+	command := "go-flake-hunter replay " + quoteArg(path) + " --pkg " + quoteArg(dir) + " -n 1"
+	if c.Witness.CrossBinary && polluterDir != "" {
+		command += " --polluter-pkg " + quoteArg(polluterDir)
 	}
-
-	if c.Witness.CrossClause {
-		race := ""
-		if c.Witness.Flags.Race {
-			race = " -race"
-		}
-		return fmt.Sprintf("go test%s %s -run %s -count=1 -parallel=1 -shuffle=%s", race, quoteArg(dir), quoteArg(domain.SelectionRegex(c.Witness)), shuffleArgument(c.Witness.Seed))
+	if c.Kind == domain.KindEnv && len(c.Witness.EnvDiff) > 0 {
+		command += " --env " + quoteArg(c.Witness.EnvDiff[0]+"="+policy.RedactionPlaceholder)
 	}
-
-	// A cross-binary witness (#6) is not a test file, it is a sequence of two
-	// `go test` processes. The command IS the reproduction contract: compile
-	// refuses these capsules, so this line is the permanent record.
-	if c.Witness.CrossBinary {
-		polluterDir := c.Target.PolluterRelDir
-		if polluterDir == "" {
-			polluterDir = dir
-		}
-		names := make([]string, 0, len(c.Witness.Polluters))
-		for _, p := range c.Witness.Polluters {
-			names = append(names, p.Name)
-		}
-		return fmt.Sprintf("go test %s -run '^(%s)$' -count=1 -parallel=1 && go test %s -run '^%s$' -count=1",
-			polluterDir, strings.Join(names, "|"), dir, c.Witness.Victim.Name)
-	}
-
-	var b strings.Builder
-	// For env flakes the value is not written to the capsule; the user puts
-	// their own value in. Leaving it empty would break the command.
-	for _, key := range c.Witness.EnvDiff {
-		fmt.Fprintf(&b, "%s=%s ", key, policy.RedactionPlaceholder)
-	}
-
-	switch c.Kind {
-	case domain.KindRepeat:
-		count := c.Witness.Flags.Count
-		if count <= 0 {
-			count = probe.DefaultRepeatCount
-		}
-		fmt.Fprintf(&b, "go test %s -run '^%s$' -count=%d",
-			dir, c.Witness.Victim.Name, count)
-	case domain.KindEnv:
-		// The victim itself, not a shrunk witness: the difference is only the environment.
-		fmt.Fprintf(&b, "go test %s -run '^%s$' -count=1",
-			dir, c.Witness.Victim.Name)
-	default:
-		parallel := c.Witness.Flags.Parallel
-		if parallel <= 0 {
-			parallel = 1
-		}
-		// -race is part of the witness: if it drops from the command, the user
-		// reproduces only the ordering, not the race.
-		race := ""
-		if c.Witness.Flags.Race {
-			race = "-race "
-		}
-		// The witness function name comes from the capsule, never from a
-		// constant: a package that defines its own TestFlakeWitness made the
-		// probe pick TestFlakeWitness_2, and printing the bare name handed the
-		// user a command that runs THEIR test and reports a pass.
-		fmt.Fprintf(&b, "go test %s%s -run '^%s$' -count=1 -parallel=%d",
-			race, dir, c.Witness.FuncName(), parallel)
-	}
-	return b.String()
+	return command
 }
 
 // reorderFlags moves flags in front of positional arguments.
@@ -918,11 +1033,11 @@ func baselineMissing(path string) bool {
 	return os.IsNotExist(err)
 }
 
-func shuffleArgument(seed int64) string {
-	if seed == 0 {
-		return "off"
-	}
-	return fmt.Sprint(seed)
-}
-
-func quoteArg(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
+// quoteArg renders one argument of a printed command so it survives the three
+// shells a user may paste it into: sh, cmd and PowerShell all strip double
+// quotes; POSIX single quotes are literal characters in cmd, which turned
+// `replay '<abs path>'` into a directory that does not exist (H-T1).
+//
+// shortcut: a path containing a double quote stays unquotable on Windows,
+// render per-shell once such a path exists in the wild.
+func quoteArg(s string) string { return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"` }

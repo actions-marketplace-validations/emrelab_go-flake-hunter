@@ -8,12 +8,13 @@ import (
 // RunSpec is the full description of a "go test" invocation.
 // Same spec + same commit = same run.
 type RunSpec struct {
-	Package     string        // package directory (used as the working directory)
-	RunRegex    string        // "" -> all tests
-	Count       int           // always >= 1; 1 also breaks the test cache
-	Parallel    int           // -parallel; 0 -> leave alone
-	CPU         int           // -cpu; 0 -> leave alone
-	ShuffleSeed int64         // 0 -> -shuffle off
+	Package     string // package directory (used as the working directory)
+	RunRegex    string // "" -> all tests
+	Count       int    // always >= 1; 1 also breaks the test cache
+	Parallel    int    // -parallel; 0 -> leave alone
+	CPU         int    // -cpu; 0 -> leave alone
+	ShuffleSeed int64  // 0 -> -shuffle off
+	Short       bool
 	Race        bool          // -race
 	Env         []string      // "KEY=VALUE" layer; nil -> inherit
 	Tags        []string      // -tags; changes the set of compiled files
@@ -53,6 +54,34 @@ type RunResult struct {
 	ExitCode    int
 	Duration    time.Duration
 	TimedOut    bool
+	State       RunState
+	Terminal    map[string]int // terminal events by test, including repeated rounds
+}
+
+type RunState string
+
+const (
+	RunPassed        RunState = "passed"
+	RunTestFailed    RunState = "test-failed"
+	RunPackageFailed RunState = "package-failed"
+	RunIncomplete    RunState = "incomplete"
+	RunBroken        RunState = "broken"
+)
+
+type PackageResult struct {
+	Package string   `json:"package"`
+	Test    string   `json:"test,omitempty"`
+	Status  RunState `json:"status"`
+}
+
+// Completed requires all expected terminal events. Fake runners usually supply
+// only outcomes, so they can model one completed observation without a stream.
+func (r *RunResult) Completed(name string, count int) bool {
+	if r.Terminal != nil {
+		return r.Terminal[name] >= count
+	}
+	_, ok := r.Outcomes[name]
+	return ok
 }
 
 // Status returns a test's outcome safely (StatusSkip if absent from the map).
@@ -81,3 +110,9 @@ func FreshRuns(ctx context.Context) context.Context {
 
 // RequiresFreshRuns reports whether a caller needs a new observation.
 func RequiresFreshRuns(ctx context.Context) bool { v, _ := ctx.Value(freshRunsKey{}).(bool); return v }
+
+// PackageFiles is the active file set reported by go list.
+type PackageFiles struct {
+	Dir, ImportPath                              string
+	GoFiles, CgoFiles, TestGoFiles, XTestGoFiles []string
+}

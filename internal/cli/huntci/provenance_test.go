@@ -129,3 +129,76 @@ func TestAccumulates(t *testing.T) {
 		t.Errorf("JSON repo = %+v, want commit %q and dirty=true", doc.Repo, head)
 	}
 }
+
+func TestAuditC13_HuntOutputsDoNotDirtyCheckout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	dir := clitest.FixtureDir(t, "repeat-accumulate")
+	t.Chdir(dir)
+	for _, args := range [][]string{{"init"}, {"add", "."}, {"commit", "-m", "fixture"}} {
+		cmd := exec.Command("git", append([]string{"-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "-c", "core.hooksPath="}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s (%v)", args, out, err)
+		}
+	}
+	for i := range 2 {
+		code, _, stderr := clitest.Run("hunt", ".")
+		if code != 0 {
+			t.Fatal(stderr)
+		}
+		store := capsule.NewStore(domain.CapsuleDir)
+		ids, err := store.List()
+		if err != nil || len(ids) != 1 {
+			t.Fatalf("capsules %v: %v", ids, err)
+		}
+		c, err := store.Read(ids[0])
+		if err != nil || c.Repo.Dirty {
+			t.Errorf("run %d: dirty=%t err=%v", i+1, c.Repo.Dirty, err)
+		}
+	}
+}
+
+func TestAuditC11_HuntUsesTargetBuildTagsAndToolchain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	dir := clitest.FixtureDir(t, "order-basic")
+	for _, file := range []string{"checkout_test.go", "state_test.go"} {
+		path := filepath.Join(dir, file)
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append([]byte("//go:build gfh_audit\n\n"), src...), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("GOFLAGS", "-tags=gfh_audit")
+	store := t.TempDir()
+	code, out, stderr := clitest.Run("hunt", dir, "--capsule-dir", store, "--format", "json")
+	if code != 0 {
+		t.Fatalf("hunt exit=%d %s %s", code, out, stderr)
+	}
+	var report struct {
+		Flakes []struct {
+			Tool   struct{ Go, TargetGo string }
+			Target domain.Target
+		}
+	}
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Flakes) != 1 || report.Flakes[0].Target.Victim != "TestVictim" ||
+		report.Flakes[0].Target.VictimFile != "checkout_test.go" || report.Flakes[0].Tool.Go == "" || report.Flakes[0].Tool.TargetGo == "" {
+		t.Fatalf("missing tagged witness or toolchain: %s", out)
+	}
+	ids, err := capsule.NewStore(store).List()
+	if err != nil || len(ids) != 1 {
+		t.Fatalf("capsules %v: %v", ids, err)
+	}
+	t.Setenv("GOFLAGS", "")
+	if code, out, stderr := clitest.Run("replay", ids[0], "--capsule-dir", store, "--pkg", dir, "-n", "1"); code != 0 || !strings.Contains(out, "1/1 reproduced") {
+		t.Fatalf("replay with recorded tags exit=%d %s %s", code, out, stderr)
+	}
+}

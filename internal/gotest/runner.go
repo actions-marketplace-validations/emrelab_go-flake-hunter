@@ -59,6 +59,9 @@ func (e *Exec) Run(ctx context.Context, spec domain.RunSpec) (*domain.RunResult,
 	// inside the lock the probe holds does not deadlock.
 	ctx, release, err := policy.Locked(ctx, spec.Package)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, domain.Wrap(domain.ErrInternal, "could not acquire lock: %v", err)
 	}
 	defer release()
@@ -86,7 +89,7 @@ func (e *Exec) Run(ctx context.Context, spec domain.RunSpec) (*domain.RunResult,
 	if len(spec.Tags) > 0 {
 		args = append(args, "-tags", strings.Join(spec.Tags, ","))
 	}
-	if e.Short {
+	if e.Short || spec.Short {
 		args = append(args, "-short")
 	}
 	args = append(args, ".")
@@ -98,6 +101,11 @@ func (e *Exec) Run(ctx context.Context, spec domain.RunSpec) (*domain.RunResult,
 	cmd.Dir = spec.Package
 	cmd.Env = append(os.Environ(), spec.Env...)
 
+	// The stream is buffered whole before parsing. Measured (M4, 120 tests ×
+	// 20 output lines ≈ 375 KB): 6.8 ms and 4.5 MB of allocations per parse,
+	// so a 50-package scan stays in tens of MB — streaming buys nothing yet.
+	// shortcut: one package whose -json log passes ~50 MB would sit in memory
+	// twice; feed the scanner an io.Reader then.
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -134,10 +142,19 @@ func (e *Exec) Run(ctx context.Context, spec domain.RunSpec) (*domain.RunResult,
 	}
 
 	// Build failure: nothing ran, and the package did not compile.
-	if !timedOut && len(res.Outcomes) == 0 && exitCode != 0 {
+	if res.BuildFailed || !timedOut && len(res.Outcomes) == 0 && exitCode != 0 &&
+		(strings.Contains(res.BuildOutput, "[setup failed]") || strings.Contains(res.BuildOutput, "[build failed]")) {
 		res.BuildFailed = true
 		if strings.TrimSpace(res.BuildOutput) == "" {
 			res.BuildOutput = firstLines(stderr.String(), 5)
+		}
+	}
+	if !res.BuildFailed {
+		switch res.State {
+		case domain.RunPackageFailed:
+			return res, domain.Wrap(domain.ErrPackageFailed, "%s", spec.Package)
+		case domain.RunIncomplete:
+			return res, domain.Wrap(domain.ErrIncomplete, "%s", spec.Package)
 		}
 	}
 	return res, nil

@@ -3,6 +3,7 @@ package clireplay
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,7 +26,7 @@ func TestReplayRefusesEnvCapsuleWithoutValue(t *testing.T) {
 	if code, _, errOut := clitest.Run("hunt", dir, "-capsule-dir", store, "--format", "json"); code != domain.ExitOK {
 		t.Fatalf("hunt code=%d %s", code, errOut)
 	}
-	code, _, errOut := clitest.Run("replay", "-capsule-dir", store)
+	code, _, errOut := clitest.Run("replay", "-capsule-dir", store, "--pkg", dir)
 	if code != domain.ExitUsage {
 		t.Fatalf("code = %d, want %d (%s)", code, domain.ExitUsage, errOut)
 	}
@@ -56,7 +57,7 @@ func TestReplayKindPaths(t *testing.T) {
 			if code, _, errOut := clitest.Run("hunt", dir, "-capsule-dir", store, "--format", "json"); code != domain.ExitOK {
 				t.Fatalf("hunt code=%d %s", code, errOut)
 			}
-			args := []string{"replay", "-capsule-dir", store, "-n", "2"}
+			args := []string{"replay", "-capsule-dir", store, "--pkg", dir, "-n", "2"}
 			if tc.env != "" {
 				args = append(args, "--env", tc.env)
 			}
@@ -270,11 +271,11 @@ func TestFlakeWitness(t *testing.T) {}
 	if c.Witness.Func != want {
 		t.Errorf("capsule witness func = %q, want %q", c.Witness.Func, want)
 	}
-	if !strings.Contains(c.Repro.Command, "'^"+want+"$'") {
-		t.Errorf("reproduce command must name the colliding-free witness: %s", c.Repro.Command)
+	if !strings.HasPrefix(c.Repro.Command, "go-flake-hunter replay ") {
+		t.Errorf("reproduce command must reinstall the colliding-free witness: %s", c.Repro.Command)
 	}
 
-	code, out, errOut := clitest.Run("replay", "-capsule-dir", store, "-n", "2")
+	code, out, errOut := clitest.Run("replay", "-capsule-dir", store, "--pkg", dir, "-n", "2")
 	if code != domain.ExitOK {
 		t.Fatalf("replay code=%d (want a deterministic replay)\n%s\n%s", code, out, errOut)
 	}
@@ -303,7 +304,7 @@ func broken() { undefined() }
 		t.Fatal(err)
 	}
 
-	code, out, errOut := clitest.Run("replay", "-capsule-dir", store, "-n", "1")
+	code, out, errOut := clitest.Run("replay", "-capsule-dir", store, "--pkg", dir, "-n", "1")
 	if code != domain.ExitBuildFailed {
 		t.Fatalf("code = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, domain.ExitBuildFailed, out, errOut)
 	}
@@ -312,5 +313,126 @@ func broken() { undefined() }
 	}
 	if !strings.Contains(out, "does not build") {
 		t.Errorf("the report should name the real reason:\n%s", out)
+	}
+}
+
+func TestAuditS3_ResolvesOnlyCheckoutPackages(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	parent := t.TempDir()
+	root := filepath.Join(parent, "checkout")
+	outside := filepath.Join(parent, "outside")
+	nested := filepath.Join(root, "nested")
+	for dir, module := range map[string]string{root: "fixture/checkout", outside: "fixture/outside", nested: "fixture/nested"} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module "+module+"\n\ngo 1.24\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "root.go"), []byte("package checkout\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "outside_test.go"), []byte(`package outside
+import ("os"; "testing")
+func TestOutside(t *testing.T) { if err := os.WriteFile("ran", nil, 0600); err != nil { t.Fatal(err) } }
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "nested_test.go"), []byte(`package nested
+import "testing"
+var calls int
+func TestRepeat(t *testing.T) { calls++; if calls > 1 { t.Fatal("repeat") } }
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	for _, tc := range []struct {
+		name, pkg, test string
+		want            int
+	}{
+		{"traversal", "../outside", "TestOutside", domain.ExitNotReproduced},
+		{"symlink", "./linked", "TestOutside", domain.ExitNotReproduced},
+		{"nested", "fixture/nested", "TestRepeat", domain.ExitOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.name == "symlink" {
+				if err := os.Symlink(outside, filepath.Join(root, "linked")); err != nil {
+					t.Skipf("symlink unavailable: %v", err)
+				}
+			}
+			log := filepath.Join(t.TempDir(), "failure.json")
+			data := fmt.Appendf(nil, "{\"Action\":\"fail\",\"Package\":%q,\"Test\":%q}\n", tc.pkg, tc.test)
+			if err := os.WriteFile(log, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			code, out, stderr := clitest.Run("repro", "--from-json", log)
+			if _, err := os.Stat(filepath.Join(outside, "ran")); !os.IsNotExist(err) {
+				t.Errorf("test outside checkout was executed: %v", err)
+				_ = os.Remove(filepath.Join(outside, "ran"))
+			}
+			if code != tc.want || tc.want != domain.ExitOK && !strings.Contains(stderr, "outside this checkout") {
+				t.Errorf("repro exit=%d, want %d\n%s\n%s", code, tc.want, out, stderr)
+			}
+		})
+	}
+}
+
+func TestAuditS5_ReplayRejectsWrongModuleAndEnvKey(t *testing.T) {
+	dir := clitest.FixtureDir(t, "env-dependent")
+	wrong := clitest.FixtureDir(t, "env-dependent")
+	if err := os.WriteFile(filepath.Join(wrong, "go.mod"), []byte("module fixture/wrong\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := capsule.NewStore(t.TempDir())
+	const pkg = "fixture/envdependent"
+	const victim = "TestDependsOnEnv"
+	path, err := store.Write(domain.Capsule{
+		ID: "gfh_audit", Schema: domain.SchemaVersion, Status: domain.StatusConfirmed, Kind: domain.KindEnv,
+		Target:  domain.Target{Package: pkg, RelDir: dir, Victim: victim},
+		Witness: domain.Witness{Victim: domain.TestID{Package: pkg, Name: victim}, EnvDiff: []string{"FIXTURE_MODE"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ dir, kv, want string }{
+		{wrong, "FIXTURE_MODE=ci", pkg},
+		{dir, "OTHER=audit-secret", "FIXTURE_MODE"},
+	} {
+		code, out, stderr := clitest.Run("replay", path, "--pkg", tc.dir, "--env", tc.kv, "-n", "1")
+		if code != domain.ExitUsage || out != "" || !strings.Contains(stderr, tc.want) || strings.Contains(stderr, "audit-secret") {
+			t.Errorf("replay exit=%d stdout=%s stderr=%s", code, out, stderr)
+		}
+	}
+}
+
+func TestAuditC6_PrintedReplayRunsFromCleanCheckout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	dir := clitest.FixtureDir(t, "order-basic")
+	store := t.TempDir()
+	code, _, stderr := clitest.Run("hunt", dir, "--short", "--capsule-dir", store)
+	if code != 0 {
+		t.Fatal(stderr)
+	}
+	s := capsule.NewStore(store)
+	ids, err := s.List()
+	if err != nil || len(ids) != 1 {
+		t.Fatalf("capsules: %v %v", ids, err)
+	}
+	c, err := s.Read(ids[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := strings.Split(c.Repro.Command, `"`)
+	if !c.Witness.Flags.Short || len(cmd) != 5 || cmd[0] != "go-flake-hunter replay " || cmd[1] != s.Path(c.ID) || cmd[3] != dir {
+		t.Fatalf("printed command cannot reinstall the witness: %s", c.Repro.Command)
+	}
+	code, out, stderr := clitest.Run("replay", cmd[1], "--pkg", cmd[3], "-n", "1")
+	if code != 0 || !strings.Contains(out, "1/1 reproduced") || !strings.Contains(c.Repro.Command, "-n 1") {
+		t.Fatalf("replay exit=%d %s %s", code, out, stderr)
 	}
 }

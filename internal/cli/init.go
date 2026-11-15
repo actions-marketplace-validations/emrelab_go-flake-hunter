@@ -33,6 +33,9 @@ on:
   schedule:
     - cron: "0 3 * * 1" # weekly: so new flakes do not pile up silently
 
+permissions:
+  contents: read
+
 jobs:
   hunt:
     runs-on: ubuntu-latest
@@ -46,23 +49,29 @@ jobs:
       # Note: soft mode on first adoption so CI is not broken. For a gate,
       # add --fail-on-flake and delete continue-on-error.
       - name: hunt flakes
+        id: hunt
         continue-on-error: true
         run: |
-          set -o pipefail
-          go run github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@latest hunt ./... \
-            --format markdown --budget 200 --timeout 10m | tee go-flake-hunter-report.md
+          set -uo pipefail
+          go run github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@v0.3.0 hunt ./... \
+            --capsule-dir "$RUNNER_TEMP/capsules" --format markdown --budget 200 --timeout 10m | tee go-flake-hunter-report.md
+          status=${PIPESTATUS[0]}
+          shopt -s nullglob
+          capsules=("$RUNNER_TEMP"/capsules/gfh_*.json)
+          if [ "${#capsules[@]}" -gt 0 ]; then echo "capsules=true" >> "$GITHUB_OUTPUT"; fi
+          exit "$status"
 
       - name: attach report
         if: always()
         run: cat go-flake-hunter-report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: store capsules
-        if: always()
+        if: always() && steps.hunt.outputs.capsules == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: go-flake-hunter-capsules
-          path: "**/.go-flake-hunter/*.json"
-          if-no-files-found: ignore
+          name: go-flake-hunter-capsules-${{ strategy.job-index || '0' }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/capsules/gfh_*.json
+          if-no-files-found: error
 `
 
 // initCmd writes the CI scaffolding a repository needs.
@@ -83,7 +92,8 @@ func initCmd(ctx context.Context, args []string, out IO) error {
 			return domain.Wrap(domain.ErrUsage, "--replay-capsule must be a repo-relative JSON path")
 		}
 		for _, r := range replayCapsule {
-			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("./_-", r)) {
+			allowed := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("./_-", r)
+			if !allowed {
 				return domain.Wrap(domain.ErrUsage, "--replay-capsule path may contain only letters, digits, dot, slash, underscore and hyphen")
 			}
 		}
@@ -128,14 +138,25 @@ func replayGate(path string) string {
 	return fmt.Sprintf(`      - name: guard recorded flake
         run: |
           set +e
-          GOBIN="$RUNNER_TEMP/go-flake-hunter-bin" go install github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@latest || exit $?
-          "$RUNNER_TEMP/go-flake-hunter-bin/go-flake-hunter" replay %s -n 3
+          GOBIN="$RUNNER_TEMP/go-flake-hunter-bin" go install github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@v0.3.0 || {
+            status=$?
+            echo "Recorded flake status unknown (install failed)"
+            exit "$status"
+          }
+          report=$("$RUNNER_TEMP/go-flake-hunter-bin/go-flake-hunter" replay %s -n 3)
           status=$?
-          case "$status" in
-            0) echo "Recorded flake reproduced"; exit 1 ;;
-            3) echo "Recorded flake no longer reproduces strictly"; exit 0 ;;
-            *) exit "$status" ;;
-          esac
+          printf '%%s\n' "$report"
+          if [ "$status" = 0 ] || [ "$status" = 3 ]; then
+            observation=$(printf '%%s\n' "$report" | sed -n 's/^run *: \([0-9][0-9]*\/[0-9][0-9]*\) reproduced$/\1/p')
+            case "$observation" in
+              0/3) echo "Recorded flake did not reproduce"; exit 0 ;;
+              [123]/3) echo "Recorded flake reproduced"; exit 1 ;;
+            esac
+          fi
+          echo "Recorded flake status unknown"
+          [ "$status" = 0 ] && status=3
+          exit "$status"
+
 
 `, quoteArg(path))
 }

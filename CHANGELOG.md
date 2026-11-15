@@ -6,6 +6,45 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixes
+- `hunt ./...` no longer abandons the scan on the first package that fails or
+  exceeds the per-run timeout. That package is named in the summary
+  (`1 of 9 packages (1 skipped)` plus the reason), the remaining packages are
+  still scanned, and the exit code stays 7. On repositories where one package
+  needs more than the two-minute per-run limit — `dgraph-io/badger`'s root
+  package, this repo's own `internal/cli/compile` — the previous behaviour
+  printed a single error line and no findings at all.
+
+### Removed
+- The autonomous issue loop: `docs/AUTO.md`, `scripts/auto/` and the `auto`,
+  `auto-next`, `auto-verify`, `auto-digest` targets. The queue it drained is
+  empty and the unattended runbook was 370 lines of process the project no
+  longer follows; `CONTRIBUTING.md` and `docs/index.md` no longer point at it.
+- `docs/ISSUE-VERIFICATION.md` (a dated snapshot of six issues, all closed) and
+  `docs/audit/` (an internal audit plan that referenced paths outside the repo).
+
+### Security
+- Validate capsule IDs and generated calls. Repro, compile and replay resolve
+  recorded package names against the checkout. Witness creation is exclusive,
+  and cleanup checks ownership before removing a file.
+
+### Outcome and CI changes
+- Exit 7 indicates package failure or incomplete execution. A test that fails
+  in isolation is reported as broken and fails `--fail-on-flake` without a capsule.
+- JSON run reports add `packages`. Partial results are inconclusive across
+  report formats, with a SARIF note for the investigated target.
+- Reproduction commands run replay with the actual capsule. Capsules record
+  short mode, build tags and the target Go toolchain.
+- Load the default baseline automatically and merge updates under a lock.
+  Generated capsules and temporary witnesses are excluded from dirty provenance.
+- Scaffold gates fail on partial reproduction. CI uploads visible capsules,
+  and release builds test the tagged SHA before producing attestations and SBOMs.
+- A clean scan prints one summary block (tests, packages, runs, duration, one
+  line per probe) instead of six lines per test; `-v` restores the per-test
+  `tried:` list. Printed commands use double quotes, so they run in cmd and
+  PowerShell as well as sh. Windows takes the cross-process directory lock
+  through `LockFileEx` instead of the previous no-op.
+
 ### Fixed
 - The release page is the annotated tag message again. `release.yml` published
   with `gh release create --generate-notes`, which lists merged PR titles and
