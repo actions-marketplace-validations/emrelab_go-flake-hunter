@@ -126,3 +126,8 @@ full suite ran on the same machine and did not reproduce when run alone — see
 
 Each needs its own polluter before a fix can be trusted, so they are left out of
 the PR.
+
+Re-measured on 2026-11-17 at the merged commit `62feabf`: seed `99991` no longer
+fails in `TestProGroupAction_UniqueGroupNameSendsOneWriteThroughTheRoot` — the
+same seed now fails in `TestLogflushPolicy_SendsOneDeleteAfterLookup`. The patch
+isolated two leaking tests; the shuffle moved on to the next one.

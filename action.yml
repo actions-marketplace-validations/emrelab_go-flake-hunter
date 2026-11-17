@@ -5,7 +5,7 @@
 # in a consumer's workflow must stay identical: a consumer searches the listing
 # and then writes the ref.
 name: go-flake-hunter
-description: Finds flaky failures in Go tests, reduces them to the smallest witness and produces capsules
+description: Reproduces flaky Go tests, shrinks them to the smallest polluter->victim witness and emits a permanent regression test
 author: emrelab
 
 branding:
