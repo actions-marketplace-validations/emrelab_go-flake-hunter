@@ -12,6 +12,13 @@
 247 tests + 2 fuzz targets · CI on linux/macos/windows + a nightly sweep · zero dependencies ·
 eight real upstream flake cases reduced to witnesses ([evidence](docs/real-world/README.md))
 
+Fixes found this way are merged upstream: [tailscale/tailscale#22408 and
+#22427](https://github.com/tailscale/tailscale/pulls?q=is%3Apr+author%3Aemrelab)
+(reviewed by Brad Fitzpatrick) and
+[Jamf-Concepts/jamf-cli#474](https://github.com/Jamf-Concepts/jamf-cli/pull/474).
+The jamf-cli case, written up: [1736 tests → one
+polluter](docs/writing/shrinking-1873-suspects-to-one-polluter.md).
+
 Finds flaky Go-test failures caused by **order, parallelism, repetition and
 environment**, shrinks them to the smallest witness (polluter → victim) and
 generates a regression test you can commit.
