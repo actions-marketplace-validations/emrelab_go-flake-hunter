@@ -21,9 +21,21 @@ func TestStorePartialWritePreservesEvidence(t *testing.T) {
 	if dir := os.Getenv("GFH_WRITE_FAILURE_STORE"); dir != "" {
 		// Isolate the process-wide limit: the write really fails after one byte.
 		signal.Ignore(syscall.SIGXFSZ)
-		if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{Cur: 1, Max: 1}); err != nil {
+		var original syscall.Rlimit
+		if err := syscall.Getrlimit(syscall.RLIMIT_FSIZE, &original); err != nil {
 			t.Fatal(err)
 		}
+		limited := original
+		limited.Cur = 1
+		if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &limited); err != nil {
+			t.Fatal(err)
+		}
+		// The test runner still needs to write coverage metadata after this test returns.
+		defer func() {
+			if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &original); err != nil {
+				t.Error(err)
+			}
+		}()
 		c := domain.Capsule{ID: "gfh_existing", Schema: domain.SchemaVersion, Kind: domain.KindOrder, Note: "replacement"}
 		if _, err := capsule.NewStore(dir).Write(c); err == nil {
 			t.Fatal("partial write unexpectedly succeeded")
