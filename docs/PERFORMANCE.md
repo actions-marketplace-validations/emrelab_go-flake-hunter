@@ -16,7 +16,7 @@ suffixes such as `_386`, `_amd64`, `_arm64`).
 | Parse noisy log: 120 tests × 20 output lines | 5.73 → 5.45 ms | 3.73 → 1.12 MB |
 | Normalize unchanged text | 1.45 → 1.20 µs | 724 → 0 B |
 | Normalize noisy text | 5.73 → 3.82 µs | 1.70 KB → 0.78 KB |
-| Normalize dense (1000× patterns) | 5.73 → 3.22 ms | 463 KB → 463 KB (fewer allocs) |
+| Normalize dense (1000× patterns) | 5.73 → 3.48 ms | 463 KB → 463 KB (more allocs) |
 
 The scanner reuses its parsed files for dependency hints and skips identifier
 resolution (`parser.SkipObjectResolution`), which its syntax analysis does not use.
@@ -25,7 +25,7 @@ Application-file trees are inspected immediately rather than retained together.
 Normalization preserves the existing pattern order and literal replacements.
 It builds replacement text only for patterns that match. A dense workload
 (1,000 repetitions of durations, addresses and pointers) stayed around
-3.2 ms and allocated about the same bytes, but made more small allocations
+3.5 ms and allocated about the same bytes, but made more small allocations
 (about 5,041 versus 80). It is not a speed-up for every input.
 
 These are component measurements, not an end-to-end `hunt` speed-up claim.
