@@ -45,8 +45,8 @@ func TestDeadlineStopsDescendants(t *testing.T) {
 	testCommandTree(t, ctx, func() { close(ctx.expired) }, false, nil)
 }
 
-// A live TCP connection belongs only to its helper process. EOF after cancellation
-// proves termination without a delayed write or polling the reuse-prone PID.
+// Each socket belongs only to its helper. Unix EOF proves exit; Windows also
+// waits on a process handle opened before cancellation, without PID reuse races.
 func testCommandTree(t *testing.T, ctx context.Context, cancel func(), normalExit bool, configure func(any)) {
 	t.Helper()
 	if testing.Short() {
@@ -88,6 +88,7 @@ func testCommandTree(t *testing.T, ctx context.Context, cancel func(), normalExi
 		}
 	}()
 	readers := make([]*bufio.Reader, 0, 3)
+	waits := make([]func() error, 0, 3)
 	var driver net.Conn
 	for range 3 {
 		conn, err := listener.Accept()
@@ -103,6 +104,21 @@ func testCommandTree(t *testing.T, ctx context.Context, cancel func(), normalExi
 		if err != nil || !strings.HasPrefix(line, "ready ") {
 			t.Fatalf("descendant handshake: %q %v", line, err)
 		}
+		var role string
+		var pid int
+		if _, err := fmt.Sscanf(line, "ready %s %d", &role, &pid); err != nil {
+			t.Fatal(err)
+		}
+		wait, release, err := observeCancellationProcess(pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := release(); err != nil {
+				t.Error(err)
+			}
+		}()
+		waits = append(waits, wait)
 		if strings.HasPrefix(line, "ready driver") {
 			driver = conn
 		}
@@ -118,9 +134,12 @@ func testCommandTree(t *testing.T, ctx context.Context, cancel func(), normalExi
 	} else {
 		stop()
 	}
-	for _, reader := range readers {
-		if _, err := reader.ReadByte(); !errors.Is(err, io.EOF) {
+	for i, reader := range readers {
+		if _, err := reader.ReadByte(); !errors.Is(err, io.EOF) && !cancellationReset(err) {
 			t.Errorf("descendant survived cancellation: %v", err)
+		}
+		if err := waits[i](); err != nil {
+			t.Error(err)
 		}
 	}
 	select {

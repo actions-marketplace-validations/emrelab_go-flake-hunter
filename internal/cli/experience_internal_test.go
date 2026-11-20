@@ -252,7 +252,11 @@ func TestDoctorMissingGoAndCancellation(t *testing.T) {
 	}
 	out.Reset()
 	errs.Reset()
-	if code := Execute(context.Background(), []string{"doctor", "--timeout", "1ns", "--format", "json"}, IO{Stdout: &out, Stderr: &errs}); code != domain.ExitCanceled || !json.Valid(out.Bytes()) {
-		t.Fatalf("timeout code=%d out=%s err=%s", code, out.String(), errs.String())
+	// A past deadline is synchronous; a 1 ns timer can race a fast missing-Go error on Windows.
+	expired, cancelExpired := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancelExpired()
+	err := doctorCmd(expired, []string{"--format", "json"}, IO{Stdout: &out, Stderr: &errs})
+	if !errors.Is(err, context.DeadlineExceeded) || domain.ExitCode(err) != domain.ExitCanceled || !json.Valid(out.Bytes()) {
+		t.Fatalf("timeout err=%v out=%s diagnostics=%s", err, out.String(), errs.String())
 	}
 }
