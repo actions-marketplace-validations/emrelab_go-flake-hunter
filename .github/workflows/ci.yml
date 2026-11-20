@@ -160,13 +160,14 @@ jobs:
           GOFLAGS: -race
         run: make tui-smoke
       - uses: actions/upload-artifact@v7
+        id: upload-smoke-capsule
         with:
           name: smoke-capsule-${{ github.run_attempt }}
           path: ${{ runner.temp }}/smoke-capsules/gfh_*.json
           if-no-files-found: error
       - uses: actions/download-artifact@v8
         with:
-          name: smoke-capsule-${{ github.run_attempt }}
+          artifact-ids: ${{ steps.upload-smoke-capsule.outputs.artifact-id }}
           path: ${{ runner.temp }}/smoke-downloaded
       - name: verify capsule round trip
         run: |
