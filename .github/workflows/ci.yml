@@ -88,7 +88,20 @@ jobs:
           go test -timeout 15m -count=1 ./internal/cli/...
 
       - name: fixtures
+        if: matrix.go != '1.24'
         run: make fixtures
+
+      - name: fixtures compatible with Go 1.24
+        if: matrix.go == '1.24'
+        run: |
+          for dir in testdata/fixtures/*/; do
+            if [ "$dir" = testdata/fixtures/synctest-bubble/ ]; then
+              echo "::notice::synctest-bubble requires Go 1.26 and is validated in the Go 1.26 jobs"
+              continue
+            fi
+            echo "== $dir"
+            (cd "$dir" && go build ./... && go vet ./...) || exit 1
+          done
 
       - name: build
         run: make build
@@ -177,8 +190,8 @@ jobs:
 
   # Dogfooding: our own tool hunts flakes in our own repo. If a witness file
   # or a leaked global makes our suite order-dependent, this step goes red.
-  # Exit 4 (budget exhausted) is inconclusive, not a failure: it warns and
-  # lets the nightly sweep carry the full load.
+  # The scan must finish: a budget-exhausted result is inconclusive and fails
+  # this gate instead of turning an incomplete scan into a green check.
   self-hunt:
     runs-on: ubuntu-latest
     steps:
@@ -204,16 +217,12 @@ jobs:
           # failing line kills the script BEFORE rc can be read. The guard
           # below was dead code until that was noticed (self-hunt @ d92e895).
           rc=0
-          # 600 runs: the sweep's run count is deterministic; measured on the
-          # current tree at just under that. 15m wall for slower runners.
-          ./go-flake-hunter hunt ./... --capsule-dir "$RUNNER_TEMP/capsules" --fail-on-flake --short --budget 600 --timeout 15m || rc=$?
+          # The expanded suite exceeds the former 600-run ceiling. Use the
+          # normal 1000-run budget and require completion, with 15m wall time.
+          ./go-flake-hunter hunt ./... --capsule-dir "$RUNNER_TEMP/capsules" --fail-on-flake --short --budget 1000 --timeout 15m || rc=$?
           shopt -s nullglob
           capsules=("$RUNNER_TEMP"/capsules/gfh_*.json)
           if [ "${#capsules[@]}" -gt 0 ]; then echo "capsules=true" >> "$GITHUB_OUTPUT"; fi
-          if [ "$rc" -eq 4 ]; then
-            echo "::warning::self-hunt ran out of budget — inconclusive, nightly carries the sweep"
-            exit 0
-          fi
           exit "$rc"
       - name: save capsules
         if: always() && steps.hunt.outputs.capsules == 'true'
