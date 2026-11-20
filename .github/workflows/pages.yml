@@ -25,7 +25,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       # Fails loudly when the repo has no Pages site yet, instead of deploying
       # nothing and leaving a 404 that looks like a content bug.
       - uses: actions/configure-pages@v6
