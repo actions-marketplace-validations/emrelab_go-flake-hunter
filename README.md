@@ -78,7 +78,7 @@ run the `go install` command above and add the output directory from
 under `go env GOPATH`.
 
 The GitHub Action prefers the prebuilt binary of the tag it is pinned to and
-falls back to building its own source, so `@v0.3.0` needs no toolchain setup
+falls back to building its own source, so `@v0.4.0` needs no toolchain setup
 beyond `actions/setup-go`.
 
 ## First 5 minutes
