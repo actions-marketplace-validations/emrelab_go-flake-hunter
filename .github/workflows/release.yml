@@ -154,6 +154,11 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
       # One line per binary: "<sha256>  go-flake-hunter-<version>-<os>-<arch>".
       # The action verifies the binary it downloads against exactly this file.
       - name: checksums
@@ -164,18 +169,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # --repo is not decoration: this job checks out nothing, and gh
-          # resolves the repository from a git working tree otherwise
-          # ("failed to run git: fatal: not a git repository" — v0.2.0).
-          #
-          # --notes-from-tag, not --generate-notes: the release notes are the
-          # annotated tag message, which is the one place a release can say WHY
-          # a version is breaking. --generate-notes lists merged PR titles and
-          # silently discards that message — v0.3.0 shipped a release page
-          # containing nothing but the compare link. CONTRIBUTING.md "Releasing"
-          # states the tag requirement this step depends on.
+          # Extract annotated tag message for release notes.
+          # --notes-from-tag is incompatible with --repo in gh CLI.
+          # We extract the message locally and pass via --notes-file.
+          TAG_MSG=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")
+          printf '%s\n' "$TAG_MSG" > /tmp/release-notes.md
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
-            --notes-from-tag \
+            --notes-file /tmp/release-notes.md \
             --title "go-flake-hunter $GITHUB_REF_NAME"
