@@ -159,15 +159,68 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # Verify complete artifact inventory before generating checksums or publishing.
+      # Expected: 5 binaries + 5 SBOMs for linux/amd64, linux/arm64, darwin/amd64,
+      # darwin/arm64, windows/amd64. No extra files allowed.
+      - name: verify artifact inventory
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          EXPECTED=(
+            "go-flake-hunter-$VERSION-linux-amd64"
+            "go-flake-hunter-$VERSION-linux-amd64.spdx.json"
+            "go-flake-hunter-$VERSION-linux-arm64"
+            "go-flake-hunter-$VERSION-linux-arm64.spdx.json"
+            "go-flake-hunter-$VERSION-darwin-amd64"
+            "go-flake-hunter-$VERSION-darwin-amd64.spdx.json"
+            "go-flake-hunter-$VERSION-darwin-arm64"
+            "go-flake-hunter-$VERSION-darwin-arm64.spdx.json"
+            "go-flake-hunter-$VERSION-windows-amd64.exe"
+            "go-flake-hunter-$VERSION-windows-amd64.exe.spdx.json"
+          )
+          if [ ! -d dist ]; then
+            echo "dist directory missing" >&2
+            exit 1
+          fi
+          # Check each expected file exists and is non-empty
+          for f in "${EXPECTED[@]}"; do
+            if [ ! -f "dist/$f" ]; then
+              echo "missing expected file: $f" >&2
+              exit 1
+            fi
+            if [ ! -s "dist/$f" ]; then
+              echo "empty file: $f" >&2
+              exit 1
+            fi
+          done
+          # Check no unexpected files in dist/
+          mapfile -t ACTUAL < <(cd dist && find . -maxdepth 1 -type f -printf '%f\n' | sort)
+          mapfile -t EXPECTED_SORTED < <(printf '%s\n' "${EXPECTED[@]}" | sort)
+          if ! diff -u <(printf '%s\n' "${EXPECTED_SORTED[@]}") <(printf '%s\n' "${ACTUAL[@]}"); then
+            echo "unexpected files in dist/; expected exactly the 10 release assets" >&2
+            exit 1
+          fi
+          echo "artifact inventory verified: 5 binaries + 5 SBOMs"
+
+      # Verify the release tag is annotated (has a message) before using it for release notes.
+      - name: verify annotated tag
+        run: |
+          set -euo pipefail
+          if ! git tag -l --format='%(objecttype)' "$GITHUB_REF_NAME" | grep -q '^tag$'; then
+            echo "release tag $GITHUB_REF_NAME is not annotated (no tag object)" >&2
+            exit 1
+          fi
+          TAG_MSG=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")
+          if [ -z "$TAG_MSG" ]; then
+            echo "annotated tag $GITHUB_REF_NAME has empty message" >&2
+            exit 1
+          fi
+
       # One line per binary: "<sha256>  go-flake-hunter-<version>-<os>-<arch>".
       # The action verifies the binary it downloads against exactly this file.
       - name: checksums
         run: |
           set -euo pipefail
-          if [ ! -d dist ] || [ -z "$(ls -A dist)" ]; then
-            echo "dist directory missing or empty" >&2
-            exit 1
-          fi
           (cd dist && sha256sum go-flake-hunter-* > SHA256SUMS)
 
       - name: release
