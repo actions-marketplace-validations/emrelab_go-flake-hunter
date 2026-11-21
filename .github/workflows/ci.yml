@@ -165,34 +165,48 @@ jobs:
           name: smoke-capsule-${{ github.run_attempt }}
           path: ${{ runner.temp }}/smoke-capsules/gfh_*.json
           if-no-files-found: error
-      - name: download smoke capsule with retry
+      - name: download smoke capsule with retry and digest verification
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT_ID: ${{ steps.upload-smoke-capsule.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.upload-smoke-capsule.outputs.artifact-digest }}
         run: |
           set -euo pipefail
           # Bounded retry for GitHub Actions artifact visibility lag.
           # The artifact upload succeeds but internal indexing may not
           # immediately make it available via artifact-ids lookup.
           # Retry with increasing backoff using GitHub REST API.
-          # Delays: 5, 15, 30, 60 seconds (max 4 attempts).
+          # Delays: 5, 15, 30 seconds (max 4 attempts).
+          # Verifies SHA256 digest of downloaded ZIP before extraction.
           attempts=0
           max_attempts=4
-          delays=(5 15 30 60)
+          delays=(5 15 30)
+          expected_digest="${ARTIFACT_DIGEST#sha256:}"
           mkdir -p "$RUNNER_TEMP/smoke-downloaded"
           while [ $attempts -lt $max_attempts ]; do
+            # Download ZIP to file, keeping stderr separate for error diagnosis
+            zip_path="$RUNNER_TEMP/smoke-downloaded/artifact.zip"
             if gh api \
               -H "Accept: application/vnd.github+json" \
               "/repos/${{ github.repository }}/actions/artifacts/$ARTIFACT_ID/zip" \
-              > "$RUNNER_TEMP/smoke-downloaded/artifact.zip" 2>&1; then
-              unzip -q -o "$RUNNER_TEMP/smoke-downloaded/artifact.zip" -d "$RUNNER_TEMP/smoke-downloaded"
-              rm "$RUNNER_TEMP/smoke-downloaded/artifact.zip"
-              echo "Artifact downloaded successfully on attempt $((attempts + 1))"
+              > "$zip_path" 2>"$zip_path.err"; then
+              # Verify SHA256 digest matches uploaded artifact
+              actual_digest=$(sha256sum "$zip_path" | awk '{print $1}')
+              if [ "$actual_digest" != "$expected_digest" ]; then
+                echo "Checksum mismatch: expected $expected_digest, got $actual_digest" >&2
+                cat "$zip_path.err" >&2
+                exit 1
+              fi
+              # Extract and verify
+              unzip -q -o "$zip_path" -d "$RUNNER_TEMP/smoke-downloaded"
+              rm "$zip_path" "$zip_path.err"
+              echo "Artifact downloaded and verified on attempt $((attempts + 1))"
               break
             fi
             attempts=$((attempts + 1))
             if [ $attempts -eq $max_attempts ]; then
               echo "All $max_attempts download attempts failed" >&2
+              cat "$zip_path.err" >&2
               exit 1
             fi
             echo "Attempt $attempts failed, waiting ${delays[$attempts - 1]}s before retry..." >&2
