@@ -148,21 +148,27 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v8
         with:
           pattern: binary-*
           path: dist
           merge-multiple: true
 
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
       # One line per binary: "<sha256>  go-flake-hunter-<version>-<os>-<arch>".
       # The action verifies the binary it downloads against exactly this file.
       - name: checksums
-        run: (cd dist && sha256sum go-flake-hunter-* > SHA256SUMS)
+        run: |
+          set -euo pipefail
+          if [ ! -d dist ] || [ -z "$(ls -A dist)" ]; then
+            echo "dist directory missing or empty" >&2
+            exit 1
+          fi
+          (cd dist && sha256sum go-flake-hunter-* > SHA256SUMS)
 
       - name: release
         env:
