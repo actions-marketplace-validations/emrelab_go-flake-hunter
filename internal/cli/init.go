@@ -54,7 +54,7 @@ jobs:
         continue-on-error: true
         run: |
           set -uo pipefail
-          go run github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@v0.3.0 hunt ./... \
+          go run github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@v0.4.0 hunt ./... \
             --capsule-dir "$RUNNER_TEMP/capsules" --format markdown --budget 200 --timeout 10m | tee go-flake-hunter-report.md
           status=${PIPESTATUS[0]}
           shopt -s nullglob
@@ -148,7 +148,7 @@ func replayGate(path string) string {
 	return fmt.Sprintf(`      - name: guard recorded flake
         run: |
           set +e
-          GOBIN="$RUNNER_TEMP/go-flake-hunter-bin" go install github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@v0.3.0 || {
+          GOBIN="$RUNNER_TEMP/go-flake-hunter-bin" go install github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@v0.4.0 || {
             status=$?
             echo "Recorded flake status unknown (install failed)"
             exit "$status"

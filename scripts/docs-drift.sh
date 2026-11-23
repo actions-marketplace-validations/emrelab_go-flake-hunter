@@ -42,6 +42,26 @@ else
   fi
 fi
 
+# 2b. An install line pins a tag, and it must be the latest one. `init` writes
+#     such a line into the user's workflow; it said v0.3.0 for a whole release
+#     after v0.4.0 shipped, because only the README was ever checked. The docs a
+#     reader copies and ARCHITECTURE's "current release" sentence drift the same
+#     way, so one tag read decides all of them.
+latest=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -1)
+if [ -z "$latest" ]; then
+  err "no v* tag in this clone, so no install line can be checked"
+else
+  for pinned in $(grep -rhoE "go (run|install) $module/cmd/$base@[A-Za-z0-9._-]+" \
+                    --include='*.go' --include='*.md' . | sed 's/.*@//' | sort -u); do
+    # @latest cannot go stale; a pinned tag can, and did.
+    [ "$pinned" = "latest" ] && continue
+    [ "$pinned" = "$latest" ] \
+      || err "an install line pins @$pinned but the latest tag is $latest"
+  done
+  grep -qF "\`$latest\` is the current release" docs/ARCHITECTURE.md \
+    || err "docs/ARCHITECTURE.md does not name $latest as the current release"
+fi
+
 # 3. The action example must pin a tag that actually resolves.
 # README only: it is the canonical example, and prose elsewhere may quote the
 # ref shape (`emrelab/go-flake-hunter@<ref>`) without claiming anything is pinned.

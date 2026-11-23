@@ -75,7 +75,7 @@ jobs:
           path: ${{ runner.temp }}
 
       - name: install go-flake-hunter
-        run: GOBIN="$RUNNER_TEMP" go install github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@v0.3.0
+        run: GOBIN="$RUNNER_TEMP" go install github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@v0.4.0
 
       - name: shrink the failures to a witness
         id: repro
