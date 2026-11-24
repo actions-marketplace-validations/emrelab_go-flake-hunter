@@ -209,7 +209,7 @@ deterministically first, then fix the cause rather than the symptom.
 ## Try it
 
 ```sh
-go install github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@v0.3.0
+go install github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@v0.4.0
 ```
 
 ```sh

@@ -5,8 +5,8 @@ title: Architecture
 
 # go-flake-hunter — Architecture
 
-**Version:** 1.1 · **Date:** November 1, 2026 · **Last synced:** November 14, 2026
-**Status:** Implemented; `v0.3.0` is the current release (prebuilt binaries for
+**Version:** 1.1 · **Date:** November 1, 2026 · **Last synced:** November 24, 2026
+**Status:** Implemented; `v0.4.0` is the current release (prebuilt binaries for
 linux/darwin/windows, `SHA256SUMS`). The tag list starts at `v0.1.0`.
 
 This document describes not "what we will do" but **how we will build it**: package boundaries, types, algorithms, Go-specific traps, and task order. The product definition is not repeated here.
@@ -613,7 +613,9 @@ Evidence is a list of **observations**, not a "why" claim. Every field is option
 
 **Intersection rule:** if `GlobalsWritten ∩ GlobalsRead` is not empty, the report says "suspected cause: shared package variable `checkout.seeded` (written by TestSeedDB, read by TestCheckout)". This is **the single highest-value line** — because it tells the user where to look, without claiming a "root cause".
 
-In the MVP, the AST walk is enough (`go/ast`); SSA (`golang.org/x/tools/go/ssa`) is optional in Phase 3, behind a build tag so as not to break K1.
+In the MVP, the AST walk is enough (`go/ast`). SSA is not planned: no consumer
+needs it, and the intersection rule above is the contract — a build-tagged
+`golang.org/x/tools/go/ssa` path was considered and dropped (issue #56).
 
 ---
 
