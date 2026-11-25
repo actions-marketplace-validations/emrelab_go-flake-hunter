@@ -73,7 +73,7 @@ curl -fsSLO https://github.com/emrelab/go-flake-hunter/releases/download/v0.4.0/
 sha256sum -c --ignore-missing SHA256SUMS
 chmod +x go-flake-hunter-0.4.0-linux-amd64 && mv go-flake-hunter-0.4.0-linux-amd64 go-flake-hunter
 
-# or build it yourself (Go 1.24+)
+# or build it yourself (Go 1.26+)
 go install github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@v0.4.0
 ```
 
@@ -441,7 +441,7 @@ The action prefers the prebuilt binary of its own tag (verified against
 `GITHUB_ACTION_PATH`: pinning a release tag is what says which version is
 running, with no waiting on the proxy. Pin a tag, never a branch — `@main`
 means every run of your CI silently executes whatever landed this morning.
-Go 1.24+ is required
+Go 1.26+ is required
 (`actions/setup-go` is on you).
 
 Turn an already-red `go test` log into a PR comment — `repro --from-json` shrinks

@@ -6,6 +6,12 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Go baseline**: module `go` directive moved from 1.24 to 1.26. Building from
+  source now needs Go 1.26+; prebuilt binaries and `go install` under the
+  default `GOTOOLCHAIN=auto` are unaffected. The floor for *target* repos stays
+  at 1.24 — that one lives in `doctor`, not in `go.mod`.
+
 ## [0.4.0] — 2026-11-20
 
 ### Added
