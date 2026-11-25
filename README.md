@@ -9,7 +9,7 @@
 
 > Reproduce the flake in 30 seconds instead of 30 minutes — and leave a permanent regression test in the repo.
 
-280 tests + 2 fuzz targets · CI on linux/macos/windows + a nightly sweep · zero dependencies ·
+291 tests + 2 fuzz targets · CI on linux/macos/windows + a nightly sweep · zero dependencies ·
 eight real upstream flake cases reduced to witnesses ([evidence](docs/real-world/README.md))
 
 Fixes found this way are merged upstream: [tailscale/tailscale#22408 and
@@ -289,7 +289,11 @@ when the selected toolchain needs a download.
 Shared flags: `--format text|json|markdown|sarif` · `--budget N` · `--timeout 10m` ·
 `--run-timeout 2m` · `--seeds N` · `--repeat N` · `--capsule-dir DIR` · `--fail-on-flake` · `--race`
 · `-v` · `--debug` (internal error detail) · `--short` (scan with `-short`:
-the target's own short-skipping tests do not spend the budget). `hunt` also
+the target's own short-skipping tests do not spend the budget) · `--fast`
+(default; build the test binary once per run with `go test -c` and execute it
+directly instead of paying the go tool's fixed cost on every run — measured
+1.7× faster on a 14-test package, and more on packages whose own tests are
+quick; `--fast=false` for toolchain-identical execution). `hunt` also
 takes `--changed` ·
 `--base REF` · `--baseline FILE` · `--write-baseline` · `--polluter-pkg PKG`
 (cross-binary suspect, see below) · `--sarif FILE` (write SARIF 2.1.0 alongside

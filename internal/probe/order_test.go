@@ -237,3 +237,165 @@ func TestCrossClauseKeepsObservedShuffleSeed(t *testing.T) {
 		}
 	}
 }
+
+// TestOrderStopsWhenPermutationSpaceIsExhausted verifies the early-stop when
+// all n! permutations have been observed. With 2 tests, n! = 2. The fake
+// returns the baseline order for seed=0 (baseline run) and for the first
+// seed, then the other permutation for the second seed. The victim never
+// fails. The loop must stop after seeing both distinct permutations:
+// 1 baseline + 2 seed runs = 3 total.
+func TestOrderStopsWhenPermutationSpaceIsExhausted(t *testing.T) {
+	tgt := probe.Target{
+		Test: domain.TestID{Package: "p", Name: "TestA"},
+		Dir:  t.TempDir(),
+		Facts: facts.PkgFacts{Clause: map[string]string{
+			"TestA": "p",
+			"TestB": "p",
+		}},
+	}
+
+	seedCount := 0
+	fake := &gotest.Fake{RunFn: func(s domain.RunSpec) (*domain.RunResult, error) {
+		if s.RunRegex == "^TestA$" {
+			return gotest.Result(s, map[string]domain.Status{"TestA": domain.StatusPass}), nil
+		}
+		var order []string
+		if s.ShuffleSeed == 0 {
+			// Baseline run (no shuffle)
+			order = []string{"TestA", "TestB"}
+		} else {
+			seedCount++
+			if seedCount%2 == 1 {
+				// First seed returns same as baseline
+				order = []string{"TestA", "TestB"}
+			} else {
+				// Second seed returns the other permutation
+				order = []string{"TestB", "TestA"}
+			}
+		}
+		res := gotest.Result(s, map[string]domain.Status{"TestA": domain.StatusPass, "TestB": domain.StatusPass})
+		res.Order = order
+		return res, nil
+	}}
+
+	_, err := probe.Order{Seeds: probe.DefaultSeeds}.Probe(context.Background(), tgt, fake)
+	if !errors.Is(err, domain.ErrNotReproduced) {
+		t.Fatalf("expected ErrNotReproduced, got %v", err)
+	}
+	if fake.CallCount() != 3 {
+		t.Fatalf("expected 3 runs (1 baseline + 2 seeds), got %d", fake.CallCount())
+	}
+}
+
+// TestOrderSkipsShuffleForSingleTest verifies that with n=1 (only one test
+// in the package), the seed loop is skipped entirely because 1! = 1 and the
+// baseline run already covers the only permutation.
+func TestOrderSkipsShuffleForSingleTest(t *testing.T) {
+	tgt := probe.Target{
+		Test: domain.TestID{Package: "p", Name: "TestA"},
+		Dir:  t.TempDir(),
+		Facts: facts.PkgFacts{Clause: map[string]string{
+			"TestA": "p",
+		}},
+	}
+
+	fake := &gotest.Fake{RunFn: func(s domain.RunSpec) (*domain.RunResult, error) {
+		if s.RunRegex == "^TestA$" {
+			return gotest.Result(s, map[string]domain.Status{"TestA": domain.StatusPass}), nil
+		}
+		res := gotest.Result(s, map[string]domain.Status{"TestA": domain.StatusPass})
+		res.Order = []string{"TestA"}
+		return res, nil
+	}}
+
+	_, err := probe.Order{Seeds: probe.DefaultSeeds}.Probe(context.Background(), tgt, fake)
+	if !errors.Is(err, domain.ErrNotReproduced) {
+		t.Fatalf("expected ErrNotReproduced, got %v", err)
+	}
+	if fake.CallCount() != 1 {
+		t.Fatalf("expected 1 run (baseline only, no shuffle), got %d", fake.CallCount())
+	}
+	runs := fake.Runs()
+	if len(runs) != 1 || runs[0].ShuffleSeed != 0 {
+		t.Fatalf("expected single baseline run with ShuffleSeed=0, got %+v", runs)
+	}
+}
+
+// TestOrderDoesNotStopWhilePermutationsRemain verifies that the early-stop
+// does NOT trigger when distinct permutations observed < n!. With 3 tests,
+// n! = 6. The fake always returns the same order. All 12 seeds must be tried:
+// 1 baseline + 12 seeds = 13 total runs.
+func TestOrderDoesNotStopWhilePermutationsRemain(t *testing.T) {
+	tgt := probe.Target{
+		Test: domain.TestID{Package: "p", Name: "TestA"},
+		Dir:  t.TempDir(),
+		Facts: facts.PkgFacts{Clause: map[string]string{
+			"TestA": "p",
+			"TestB": "p",
+			"TestC": "p",
+		}},
+	}
+
+	fake := &gotest.Fake{RunFn: func(s domain.RunSpec) (*domain.RunResult, error) {
+		if s.RunRegex == "^TestA$" {
+			return gotest.Result(s, map[string]domain.Status{"TestA": domain.StatusPass}), nil
+		}
+		res := gotest.Result(s, map[string]domain.Status{"TestA": domain.StatusPass, "TestB": domain.StatusPass, "TestC": domain.StatusPass})
+		res.Order = []string{"TestA", "TestB", "TestC"}
+		return res, nil
+	}}
+
+	_, err := probe.Order{Seeds: probe.DefaultSeeds}.Probe(context.Background(), tgt, fake)
+	if !errors.Is(err, domain.ErrNotReproduced) {
+		t.Fatalf("expected ErrNotReproduced, got %v", err)
+	}
+	if fake.CallCount() != 13 {
+		t.Fatalf("expected 13 runs (1 baseline + 12 seeds), got %d", fake.CallCount())
+	}
+}
+
+// TestOrderIgnoresShortPermutation proves a seed run that reports FEWER tests
+// than the baseline (an aborted/partial run) does not count toward exhaustion.
+// 2 tests => space 2. Baseline order [TestA TestB]. Seed 1 returns only
+// [TestA] (truncated). Seed 2 returns [TestB TestA]. With the guard: 3 runs
+// total (baseline + 2 seeds). Without the guard the truncated order would be
+// counted as a distinct permutation, seen would hit 2 and the loop would stop
+// after 2 runs.
+func TestOrderIgnoresShortPermutation(t *testing.T) {
+	tgt := probe.Target{
+		Test: domain.TestID{Package: "p", Name: "TestA"},
+		Dir:  t.TempDir(),
+		Facts: facts.PkgFacts{Clause: map[string]string{
+			"TestA": "p",
+			"TestB": "p",
+		}},
+	}
+
+	fake := &gotest.Fake{RunFn: func(s domain.RunSpec) (*domain.RunResult, error) {
+		if s.RunRegex == "^TestA$" {
+			return gotest.Result(s, map[string]domain.Status{"TestA": domain.StatusPass}), nil
+		}
+		var order []string
+		if s.ShuffleSeed == 0 {
+			// Baseline run
+			order = []string{"TestA", "TestB"}
+		} else if s.ShuffleSeed <= 1 {
+			// Seed 1: truncated run (only TestA ran)
+			order = []string{"TestA"}
+		} else {
+			// Seed 2+: the other full permutation
+			order = []string{"TestB", "TestA"}
+		}
+		res := gotest.Result(s, map[string]domain.Status{"TestA": domain.StatusPass, "TestB": domain.StatusPass})
+		res.Order = order
+		return res, nil
+	}}
+
+	_, err := probe.Order{Seeds: probe.DefaultSeeds}.Probe(context.Background(), tgt, fake)
+	if !errors.Is(err, domain.ErrNotReproduced) {
+		t.Fatalf("expected ErrNotReproduced, got %v", err)
+	}
+	if fake.CallCount() != 3 {
+		t.Fatalf("expected 3 runs (baseline + 2 seeds), got %d", fake.CallCount())
+	}
+}

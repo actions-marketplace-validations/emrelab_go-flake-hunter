@@ -254,6 +254,18 @@ type Runner interface {
 }
 ```
 
+Two implementations exist. `Exec` runs one `go test -json` per Run and is the
+reference behaviour. `Compiled` (`--fast`, the default) runs `go test -c` and
+then the built binary directly, piping its stdout through `test2json`. The `go`
+tool spends ~0.5 s per invocation planning before the test binary starts, so a
+package with no long tests is dominated by that fixed cost: 13 shuffle runs cost
+5.5 s through `go test` and 1.7 s through the binary. Three constraints keep
+`Compiled` honest — the binary path is stable per package (`-o` changes force a
+relink), witness runs (`spec.Source != ""`) always fall back to `Exec` so the
+generated-witness path is byte-identical, and a test that started but has fewer
+terminal events than its `-count` in a non-zero run is upgraded to a failure
+(cmd/go synthesizes that event for panics and `os.Exit`; `test2json` does not).
+
 ### 5.1. Discover
 
 `go test -list '.*'` gives top-level tests in source order. The harness
@@ -438,7 +450,7 @@ type Target struct {
 | Order | Probe | Cost | What it does | If found |
 |---|---|---|---|---|
 | 1 | `repeat` | **1 run** | `-count=10`; anything that passes the first round then fails? | `KindRepeat` |
-| 2 | `order` | ~10–40 runs | passes alone, fails with all → shuffle sweep → ddmin | `KindOrder` |
+| 2 | `order` | 1–40 runs | passes alone, fails with all → shuffle sweep → ddmin. The sweep stops early once every `n!` order of the package's `n` tests has been observed, so a 1-test package costs no seed run and a 2-test package two. | `KindOrder` |
 | 3 | `parallel` | ~6 runs | passes with `-parallel=1`, fails with `-parallel=2,4,8` | `KindParallel` |
 | 4 | `env` | ~4 runs/var | flip each variable read by `os.Getenv` to a sentinel | `KindEnv` |
 
@@ -958,7 +970,7 @@ Remaining roadmap items live in the GitHub issue tracker, not in this document.
 
 | # | Risk | Impact | Mitigation |
 |---|---|---|---|
-| R1 | `-shuffle` seed space is huge; an order not found in the seed list | False negative | Default 12 seeds (a 40-seed sweep cost ~12 s/package for no recall gain); raise with `--seeds`; the report says "not found in this range" |
+| R1 | `-shuffle` seed space is huge; an order not found in the seed list | False negative | Default 12 seeds (a 40-seed sweep cost ~12 s/package for no recall gain); raise with `--seeds`; the report says "not found in this range". For a package with at most 3 tests the 12 seeds already cover more than the whole `n!` order space, so the sweep stops as soon as it is exhausted — no recall is lost there |
 | R2 | Tests use an external service/DB → reproduction impossible | `ErrNotReproduced` | `status: probabilistic`; warning to the user: "this package uses external dependencies" |
 | R3 | Package contains 200+ tests; one ddmin sweep takes 40s | Budget not enough | Pre-filter with `-run`; `-failfast`; `--seeds 10` on expensive packages. A package whose own single run exceeds the 2m ceiling is unreachable by every hypothesis — raise it with `--run-timeout`, or the scan reports the package as skipped (exit 7) |
 | R4 | On Windows, `exec`, path, and port behavior differ | Platform bug | MVP: darwin/linux guaranteed; windows best-effort, smoke in CI |
