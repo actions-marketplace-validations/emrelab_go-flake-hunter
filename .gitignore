@@ -14,3 +14,4 @@ testdata/fixtures/*/*_goflakehunter_test.go
 
 # Editor files: personal, stay out of repo history.
 .idea/
+.hermes/

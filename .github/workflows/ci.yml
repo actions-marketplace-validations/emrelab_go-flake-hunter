@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ['1.24', '1.26']
+        go: ['1.26', '1.27']
     runs-on: ${{ matrix.os }}
     # The Windows runner's default shell is pwsh; the steps assume POSIX scripts
     # (make, $(...) capture, ./go-flake-hunter). Pinned to bash in one place.
@@ -88,20 +88,7 @@ jobs:
           go test -timeout 15m -count=1 ./internal/cli/...
 
       - name: fixtures
-        if: matrix.go != '1.24'
         run: make fixtures
-
-      - name: fixtures compatible with Go 1.24
-        if: matrix.go == '1.24'
-        run: |
-          for dir in testdata/fixtures/*/; do
-            if [ "$dir" = testdata/fixtures/synctest-bubble/ ]; then
-              echo "::notice::synctest-bubble requires Go 1.26 and is validated in the Go 1.26 jobs"
-              continue
-            fi
-            echo "== $dir"
-            (cd "$dir" && go build ./... && go vet ./...) || exit 1
-          done
 
       - name: build
         run: make build
@@ -109,26 +96,31 @@ jobs:
       - name: smoke (help)
         run: ./go-flake-hunter help
 
-  # The native matrix covers the Go 1.24 floor and the release toolchain.
-  # Intermediate and current Go versions exercise the full suite once on Linux.
-  compatibility:
-    strategy:
-      fail-fast: false
-      matrix:
-        go: ['1.25', '1.27']
+  # The module floor only has to build: the newest-version duty moved into the
+  # native matrix, which already runs the full race suite on three OSes.
+  floor:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ matrix.go }}
+          go-version: '1.26'
           cache: false
-      - name: vet
-        run: go vet ./...
-      - name: build
+      - name: build with the module floor
         run: make build
-      - name: full race suite
-        run: go test -race -timeout 15m -count=1 -v ./...
+      # The tool's job is to drive whatever `go` the target repo has, so the
+      # binary is proven against a toolchain older than the one that built it.
+      # The second setup-go puts 1.24 first in PATH; GOTOOLCHAIN=local (workflow
+      # env) stops anything from downloading 1.26 behind our back.
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.24'
+          cache: false
+      - name: drive a Go 1.24 toolchain
+        run: |
+          go version
+          ( cd testdata/fixtures/order-basic && "$GITHUB_WORKSPACE/go-flake-hunter" doctor )
+          ( cd testdata/fixtures/order-basic && "$GITHUB_WORKSPACE/go-flake-hunter" hunt ./... --budget 50 --timeout 5m )
 
   # Gates that need one OS, not three: lint, the Action's step scripts, and the
   # vulnerability scan. Pinned module versions, not @latest: a CI tool that

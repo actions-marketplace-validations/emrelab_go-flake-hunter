@@ -118,6 +118,33 @@ func (p Order) Probe(ctx context.Context, tgt Target, r gotest.Runner) (*domain.
 
 	// (3) Shuffle search. This is what makes order-dependence findable in a
 	// package whose source order happens to be lucky.
+	//
+	// The order space of n tests is n! permutations. We track distinct observed
+	// permutations; once we have seen all n! (or exhausted seeds), no unseen
+	// seed can produce a new permutation that would fail the victim.
+	n := len(all.Order)
+	if n <= 1 {
+		// n=1 has exactly one permutation (1! = 1), already covered by the
+		// baseline run. Skip the seed loop entirely.
+		return nil, ErrNotReproduced
+	}
+
+	// Saturating factorial: cap at len(seeds)+1 so we never overflow and
+	// the "exhausted" check works for any n. Any value >= len(seeds) is
+	// functionally "infinite" for our loop bound.
+	fact := 1
+	for i := 2; i <= n; i++ {
+		fact *= i
+		if fact >= len(seeds)+1 {
+			fact = len(seeds) + 1
+			break
+		}
+	}
+
+	seen := make(map[string]struct{}, fact)
+	// Record the baseline permutation so it counts toward exhaustion.
+	seen[strings.Join(all.Order, "\x00")] = struct{}{}
+
 	for _, seed := range seeds {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -133,6 +160,17 @@ func (p Order) Probe(ctx context.Context, tgt Target, r gotest.Runner) (*domain.
 		}
 		if res.Failed(tgt.Test.Name) {
 			return p.minimize(ctx, tgt, r, res.Order, verify, seed)
+		}
+		// Only count permutations of the expected size; a changed test set
+		// mid-sweep would otherwise look like exhaustion.
+		if len(res.Order) == n {
+			key := strings.Join(res.Order, "\x00")
+			if _, ok := seen[key]; !ok {
+				seen[key] = struct{}{}
+				if len(seen) >= fact {
+					break // permutation space exhausted
+				}
+			}
 		}
 	}
 	return nil, ErrNotReproduced

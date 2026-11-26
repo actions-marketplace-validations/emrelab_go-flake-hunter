@@ -43,6 +43,7 @@ type huntOptions struct {
 	failOnFlake bool
 	race        bool
 	short       bool
+	fast        bool // --fast (default true): run the built test binary directly
 	// polluterPkg is the user-typed suspect for the two-binary engine (#6);
 	// polluterDir is it resolved, empty when the flag is absent.
 	polluterPkg string
@@ -74,6 +75,10 @@ func (o *huntOptions) addFlags(fs *flag.FlagSet) {
 	// otherwise burn the wall budget re-running them once per shuffle seed
 	// (self-hunt @ d92e895 learned this the expensive way).
 	fs.BoolVar(&o.short, "short", false, "scan with -short (skip the target's short-skipping tests)")
+	// fast runs the built test binary directly instead of one `go test` per run.
+	// Default true; --fast=false for toolchain-identical execution. Witness
+	// installs and -race always go through Exec regardless of this flag.
+	fs.BoolVar(&o.fast, "fast", true, "run the built test binary directly instead of one `go test` per run (faster; --fast=false for toolchain-identical execution)")
 	fs.StringVar(&o.polluterPkg, "polluter-pkg", "",
 		"suspect polluter package (dir or import path): enables cross-binary order reproduction (#6)")
 }
@@ -154,9 +159,16 @@ func newScanner(out IO, o huntOptions, only string) *scanner {
 	// Budget: every run counts. The cache is OUTSIDE the budget: a cached
 	// result never ran, so it does not spend budget.
 	budget := policy.New(o.budget, o.timeout)
-	// Cache: the shuffle scan is paid once per package, not per test.
-	// 23s -> a few seconds on a 3-test fixture; 10x difference at 30 tests.
-	runner := gotest.NewCache(gotest.Budgeted{Inner: &gotest.Exec{Short: o.short, RunTimeout: o.runTimeout}, Budget: budget}, 0)
+	// Inner runner: Compiled (fast path) or Exec (toolchain-identical).
+	// Witness installs and -race always fall back to Exec inside Compiled.
+	inner := &gotest.Exec{Short: o.short, RunTimeout: o.runTimeout}
+	var runner gotest.Runner = inner
+	if o.fast {
+		runner = &gotest.Compiled{Inner: inner}
+	}
+	// Cache OUTSIDE the Compiled: a cached pass must not rebuild.
+	// Budget OUTSIDE the Cache: a cached result still must not spend budget.
+	runner = gotest.NewCache(gotest.Budgeted{Inner: runner, Budget: budget}, 0)
 	// The probe set and its cost order live in probe.Default; the CLI only
 	// supplies the flag values. That is what keeps the registry from drifting.
 	registry := probe.Default(probe.Config{

@@ -62,3 +62,30 @@ go test -run '^$' -bench '^BenchmarkSpecKey$' -benchmem -count=5 ./internal/gote
 measurements from a different baseline (Go 1.26.2 / different machine). On Go
 1.27.4 the baseline already achieves ~100 ns/op, so no further speedup is
 observed for this microbenchmark.
+
+## Compiled runner (`--fast`, 2026-11-24)
+
+Same machine and toolchain. `hunt ./internal/policy --budget 60` (14 tests,
+warm build cache), wall time of the whole command:
+
+| Runner | Wall time | `go` subprocesses |
+|---|---|---|
+| `--fast=false` (`go test -json` per run) | 10.4–11.4 s | 31 |
+| `--fast` (default, `go test -c` + binary) | 6.1–6.8 s | 31 |
+
+The saving is the go tool's fixed planning cost, not the tests: 13 shuffle runs
+of one test cost 4.3 s through `go test` and 0.09 s through an already-built
+binary; `go test -c` warm costs 0.06 s. Two implementation details carry most of
+it — the output path must be stable (`-o` in a fresh temp dir forces a relink:
+2.39 s vs 0.78 s over 13 builds), and `test2json` must be invoked as its binary
+rather than through `go tool` (0.007 s vs 0.076 s per call).
+
+This is a reduction in fixed cost, not in coverage: every probe asks the same
+questions, and the 14 fixture packages produce byte-identical findings under
+both runners (capsule ids included). Witness runs and `-race` still go through
+the go tool, because both need a build the compiled path does not make.
+
+```sh
+go test -c -o /tmp/x.test ./some/pkg
+time (for s in 1 2 3 5 8 13 21 34 55 89 144 233; do /tmp/x.test -test.count=1 -test.parallel=1 -test.shuffle=$s >/dev/null; done)
+```

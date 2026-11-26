@@ -9,7 +9,7 @@
 
 > Reproduce the flake in 30 seconds instead of 30 minutes — and leave a permanent regression test in the repo.
 
-280 tests + 2 fuzz targets · CI on linux/macos/windows + a nightly sweep · zero dependencies ·
+291 tests + 2 fuzz targets · CI on linux/macos/windows + a nightly sweep · zero dependencies ·
 eight real upstream flake cases reduced to witnesses ([evidence](docs/real-world/README.md))
 
 Fixes found this way are merged upstream: [tailscale/tailscale#22408 and
@@ -73,7 +73,7 @@ curl -fsSLO https://github.com/emrelab/go-flake-hunter/releases/download/v0.4.0/
 sha256sum -c --ignore-missing SHA256SUMS
 chmod +x go-flake-hunter-0.4.0-linux-amd64 && mv go-flake-hunter-0.4.0-linux-amd64 go-flake-hunter
 
-# or build it yourself (Go 1.24+)
+# or build it yourself (Go 1.26+)
 go install github.com/emrelab/go-flake-hunter/cmd/go-flake-hunter@v0.4.0
 ```
 
@@ -289,7 +289,11 @@ when the selected toolchain needs a download.
 Shared flags: `--format text|json|markdown|sarif` · `--budget N` · `--timeout 10m` ·
 `--run-timeout 2m` · `--seeds N` · `--repeat N` · `--capsule-dir DIR` · `--fail-on-flake` · `--race`
 · `-v` · `--debug` (internal error detail) · `--short` (scan with `-short`:
-the target's own short-skipping tests do not spend the budget). `hunt` also
+the target's own short-skipping tests do not spend the budget) · `--fast`
+(default; build the test binary once per run with `go test -c` and execute it
+directly instead of paying the go tool's fixed cost on every run — measured
+1.7× faster on a 14-test package, and more on packages whose own tests are
+quick; `--fast=false` for toolchain-identical execution). `hunt` also
 takes `--changed` ·
 `--base REF` · `--baseline FILE` · `--write-baseline` · `--polluter-pkg PKG`
 (cross-binary suspect, see below) · `--sarif FILE` (write SARIF 2.1.0 alongside
@@ -437,7 +441,7 @@ The action prefers the prebuilt binary of its own tag (verified against
 `GITHUB_ACTION_PATH`: pinning a release tag is what says which version is
 running, with no waiting on the proxy. Pin a tag, never a branch — `@main`
 means every run of your CI silently executes whatever landed this morning.
-Go 1.24+ is required
+Go 1.26+ is required
 (`actions/setup-go` is on you).
 
 Turn an already-red `go test` log into a PR comment — `repro --from-json` shrinks

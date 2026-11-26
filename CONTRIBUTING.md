@@ -8,12 +8,14 @@ cd go-flake-hunter
 make all          # fmt + vet + test + build
 ```
 
-Go 1.24+ is required to build. There are no dependencies; the absence of a
+Go 1.26+ is required to build. There are no dependencies; the absence of a
 `go.sum` file is deliberate. CI runs the full race suite on Linux, macOS and
-Windows with Go 1.24 and 1.26. Go 1.25 and 1.27 also run the full suite on
-Linux. Native cancellation and console regressions run repeatedly without the
-Go test result cache. The `synctest-bubble` fixture requires Go 1.26 and is
-compiled in the Go 1.26 jobs; Go 1.24 builds every other fixture.
+Windows with Go 1.26 — the module floor and the toolchain the release is built
+with — and with Go 1.27, the newest release, on Linux. A separate floor job
+builds with 1.26 and then drives a Go 1.24 toolchain: that is what the tool does
+for its users, and `doctor`'s minimum is about the `go` in the target repo's
+`PATH`, not the one this module is built with. Native cancellation and console
+regressions run repeatedly without the Go test result cache.
 
 ## Golden rules
 

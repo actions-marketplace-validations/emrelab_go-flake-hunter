@@ -1,3 +1,3 @@
 module github.com/emrelab/go-flake-hunter
 
-go 1.24
+go 1.26
