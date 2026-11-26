@@ -238,6 +238,30 @@ func declaresTest(file *ast.File, name string) bool {
 // the same code "stayed green" has always had. An empty status with a non-nil
 // error means no verdict was reached (build failure) and nothing is recorded.
 func verifyCompiled(ctx context.Context, r gotest.Runner, dir string, c domain.Capsule, out IO) (domain.VerifyStatus, error) {
+	// Isolation precondition: the artifact's RED is only evidence about THIS
+	// flake if the victim passes alone. A victim changed to fail unconditionally
+	// would otherwise verify an artifact that attributes an unrelated failure.
+	if c.Kind != domain.KindEnv {
+		iso := domain.RunSpec{
+			Package:  dir,
+			RunRegex: "^" + c.Witness.Victim.Name + "$",
+			Count:    1,
+			Parallel: 1,
+			Tags:     c.Witness.Flags.Tags,
+			Short:    c.Witness.Flags.Short,
+		}
+		res, err := r.Run(ctx, iso)
+		if err != nil {
+			return "", err
+		}
+		if res.BuildFailed {
+			return "", domain.Wrap(domain.ErrBuildFailed, "the package does not build: %s", firstBuildLine(res.BuildOutput))
+		}
+		if res.Failed(c.Witness.Victim.Name) {
+			return "", domain.Wrap(domain.ErrNotReproducible,
+				"%s fails in isolation; the artifact would attribute an unrelated failure", c.Witness.Victim.Name)
+		}
+	}
 	res, err := r.Run(ctx, compile.VerifySpec(c, dir))
 	if err != nil {
 		return "", err

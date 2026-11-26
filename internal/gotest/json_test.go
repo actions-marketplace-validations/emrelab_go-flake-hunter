@@ -138,3 +138,25 @@ func TestFailuresDistinguishesEmptyFromGarbage(t *testing.T) {
 		t.Errorf("non-log input: err = %v, want ErrUsage", err)
 	}
 }
+
+// A JSON object with no test2json action is not evidence of a test log, and a
+// stream that starts tests without ever finishing them is truncated. Both used
+// to read as "the log has no failing tests", i.e. a clean CI artifact.
+func TestFailuresRejectsNonRecordsAndTruncatedStreams(t *testing.T) {
+	if _, err := Failures([]byte("{}\n")); !errors.Is(err, domain.ErrUsage) {
+		t.Errorf("empty object: err = %v, want ErrUsage", err)
+	}
+	truncated := strings.Join([]string{
+		`{"Action":"start","Package":"p"}`,
+		`{"Action":"run","Package":"p","Test":"TestX"}`,
+		`{"Action":"output","Package":"p","Test":"TestX","Output":"=== RUN   TestX\n"}`,
+	}, "\n")
+	if _, err := Failures([]byte(truncated)); !errors.Is(err, domain.ErrUsage) {
+		t.Errorf("truncated stream: err = %v, want ErrUsage", err)
+	}
+	// Control: the same run with a terminal event is a valid, failure-free log.
+	complete := truncated + "\n" + `{"Action":"pass","Package":"p","Test":"TestX"}`
+	if ids, err := Failures([]byte(complete)); err != nil || len(ids) != 0 {
+		t.Errorf("complete log: ids=%v err=%v, want empty, nil", ids, err)
+	}
+}

@@ -93,6 +93,7 @@ func (s *scanner) packages(ctx context.Context, dirs []string, jobs int) error {
 	}
 	wg.Wait()
 	var first error
+	var global error
 	for i := range results {
 		r := &results[i]
 		if r.child == nil {
@@ -128,11 +129,18 @@ func (s *scanner) packages(ctx context.Context, dirs []string, jobs int) error {
 					label = unique[i]
 				}
 				s.skipped = append(s.skipped, fmt.Sprintf("%s: %s", label, skipReason(r.err)))
+			} else if global == nil {
+				// A run-wide failure (budget, cancel) explains the stop; a
+				// package verdict must not overwrite its exit code.
+				global = r.err
 			}
 			if first == nil {
 				first = r.err
 			}
 		}
+	}
+	if global != nil {
+		return global
 	}
 	return first
 }

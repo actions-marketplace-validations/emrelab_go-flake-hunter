@@ -142,7 +142,15 @@ func TestAuditC1_VerifiesOnlyVictimFailure(t *testing.T) {
 					}
 					wantCode, wantStatus := domain.ExitNotReproduced, domain.VerifyGreenNotReproduced
 					if victimFails {
-						wantCode, wantStatus = domain.ExitOK, domain.VerifyVerified
+						// order/parallel: a victim that fails alone makes the
+						// artifact's RED unattributable, so compile refuses.
+						// repeat: failing on a later round IS the repeat flake,
+						// and env: the failure is the value-dependent behaviour
+						// (the value is not stored) — both stay verifiable.
+						wantCode, wantStatus = domain.ExitNotReproduced, ""
+						if kind == domain.KindEnv || kind == domain.KindRepeat {
+							wantCode, wantStatus = domain.ExitOK, domain.VerifyVerified
+						}
 					}
 					code, out, stderr := clitest.Run("compile", "--pkg", dir, "--verify", path)
 					gotStatus := clitest.StoredVerifyStatus(t, filepath.Dir(path))

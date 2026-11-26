@@ -9,7 +9,7 @@
 
 > Reproduce the flake in 30 seconds instead of 30 minutes — and leave a permanent regression test in the repo.
 
-291 tests + 2 fuzz targets · CI on linux/macos/windows + a nightly sweep · zero dependencies ·
+299 tests + 2 fuzz targets · CI on linux/macos/windows + a nightly sweep · zero dependencies ·
 eight real upstream flake cases reduced to witnesses ([evidence](docs/real-world/README.md))
 
 Fixes found this way are merged upstream: [tailscale/tailscale#22408 and
@@ -20,7 +20,8 @@ The jamf-cli case, written up: [1736 tests → one
 polluter](docs/writing/shrinking-1873-suspects-to-one-polluter.md).
 
 Finds flaky Go-test failures caused by **order, parallelism, repetition and
-environment**, shrinks them to the smallest witness (polluter → victim) and
+environment**, shrinks them to a 1-minimal witness (polluter → victim, the
+smallest set ddmin can prove — not a global minimum) and
 generates a regression test you can commit.
 
 It does *not* detect flaky tests — that layer is crowded (BuildPulse, Trunk,

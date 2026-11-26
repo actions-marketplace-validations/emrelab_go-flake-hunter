@@ -211,3 +211,23 @@ func TestTUIViewsSanitizeAndHandleResize(t *testing.T) {
 		t.Fatal("missing compact fallback")
 	}
 }
+
+// The TUI lists capsules from whatever checkout the user targeted. Replay and
+// compile must carry that package with --pkg, or the command resolves the
+// capsule against the TUI's own cwd and refuses it as "outside this checkout".
+func TestTUIReplayTargetsSelectedCheckout(t *testing.T) {
+	pkg := t.TempDir()
+	path := filepath.Join(pkg, domain.CapsuleDir, "gfh_abcdef123456.json")
+	var got []string
+	task := &tuiTask{seen: map[string]bool{}}
+	f := tuiFinding{path: path, capsule: domain.Capsule{Kind: domain.KindOrder, Status: domain.StatusConfirmed}}
+	_ = tuiRunTask(context.Background(), tuiRequest{kind: "replay", finding: f}, tuiConfig{}, nil, task,
+		func(_ context.Context, args []string, _ IO) int {
+			got = append([]string(nil), args...)
+			return 0
+		})
+	joined := strings.Join(got, " ")
+	if !strings.Contains(joined, "--pkg "+pkg) {
+		t.Fatalf("replay did not target the selected package: %v", got)
+	}
+}

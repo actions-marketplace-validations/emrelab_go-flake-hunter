@@ -527,7 +527,7 @@ Classic ddmin, but **a non-deterministic predicate produces false minimality**. 
 ```go
 type Predicate func(ctx context.Context, subset []domain.TestID) (bool, error)
 
-// Minimize finds the smallest set satisfying the predicate "victim fails when the
+// Minimize finds a 1-minimal set satisfying the predicate "victim fails when the
 // subset runs first", then re-verifies the result verify times.
 func Minimize(ctx context.Context, cand []domain.TestID, pred Predicate, verify int) ([]domain.TestID, error) {
 	min, err := ddmin(ctx, cand, pred)

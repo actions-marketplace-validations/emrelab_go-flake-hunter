@@ -39,11 +39,17 @@ type Compiled struct {
 	binDir     string
 	binDirErr  error
 
-	// Memoized test2json binary path; -n tool test2json prints the binary
+	// Memoized test2json binary path; `go tool -n test2json` prints the binary
 	// without running it. Fallback to "go tool test2json" if resolution fails.
 	t2jOnce   sync.Once
 	t2jPath   string
 	t2jDirect bool
+
+	// Effective GOFLAGS, resolved once. Test-runtime flags there (-skip, -run,
+	// ...) are forwarded by the go command to the test binary; a direct binary
+	// run would silently drop them, so such runs fall back to Exec instead.
+	goflagsOnce sync.Once
+	goflags     string
 }
 
 var _ Runner = (*Compiled)(nil)
@@ -62,6 +68,13 @@ func (c *Compiled) Run(ctx context.Context, spec domain.RunSpec) (*domain.RunRes
 	//     never runs under race — this is one witness confirmation, not a hot
 	//     path, so paying the tool's planning cost here is the right trade.
 	if spec.Source != "" || spec.Race {
+		return c.Inner.Run(ctx, spec)
+	}
+	// GOFLAGS can carry test-selection flags the go command forwards to the
+	// test binary. Replaying the binary without them runs a different test set
+	// (measured: GOFLAGS=-skip=TestX made the fast path report a flake the slow
+	// path cannot even run). Parity beats speed here.
+	if c.hasRuntimeTestFlags() {
 		return c.Inner.Run(ctx, spec)
 	}
 
@@ -133,7 +146,11 @@ func (c *Compiled) Run(ctx context.Context, spec domain.RunSpec) (*domain.RunRes
 	// synthesizes it), which is why Run upgrades any started-but-unfinished
 	// test below instead of trusting the stream.
 	args := []string{
-		"-test.v",
+		// =test2json makes the framework mark its own result lines, so a test
+		// that PRINTS "--- FAIL: TestX" stays an output event. Plain -test.v
+		// let such output become a fail event (measured: a passing test read as
+		// broken).
+		"-test.v=test2json",
 		"-test.paniconexit0",
 		"-test.count", strconv.Itoa(spec.Count),
 		"-test.timeout", spec.Timeout.String(),
@@ -197,31 +214,35 @@ func (c *Compiled) Run(ctx context.Context, spec domain.RunSpec) (*domain.RunRes
 	// Pipe ONLY stdout through test2json. go test pipes stdout to test2json and
 	// passes stderr through untouched; combining them turns a test's stderr
 	// writes into JSON frames. We keep stderr for BuildOutput/tail only.
-	var parsedOut []byte
-	if ip != "" {
-		t2jPath, direct := c.test2jsonPath()
-		t2jCmd, t2jArgs := t2jPath, []string{"-p", ip}
-		if !direct {
-			t2jCmd, t2jArgs = goBin, []string{"tool", "test2json", "-p", ip}
-		}
-		// commandContext returns a platform-specific type (the Windows variant
-		// carries a Job Object), so it is used inline rather than assigned to
-		// *exec.Cmd.
-		t2j := commandContext(ctx, t2jCmd, t2jArgs...)
-		t2j.Dir = spec.Package
-		t2j.Stdin = bytes.NewReader(stdout.Bytes())
-		var t2jOut bytes.Buffer
-		t2j.Stdout = &t2jOut
-		if err := t2j.Run(); err == nil {
-			parsedOut = t2jOut.Bytes()
-		}
+	//
+	// The binary's stdout is TEXT: only the conversion turns it into events.
+	// A failed conversion therefore has no verdict at all — parsing the raw
+	// text yields zero events and the exit code then reads as a green run.
+	// (Measured: cancelling during conversion produced "missing results", and
+	// exit 0 with no events read as passed.)
+	if ip == "" {
+		return nil, domain.Wrap(domain.ErrIncomplete, "%s: import path unknown; test2json conversion skipped", spec.Package)
 	}
-
-	// If test2json failed or import path unavailable, parse raw stdout.
-	// A parse loss must not become a false verdict.
-	if parsedOut == nil {
-		parsedOut = stdout.Bytes()
+	t2jPath, direct := c.test2jsonPath()
+	t2jCmd, t2jArgs := t2jPath, []string{"-p", ip}
+	if !direct {
+		t2jCmd, t2jArgs = goBin, []string{"tool", "test2json", "-p", ip}
 	}
+	// commandContext returns a platform-specific type (the Windows variant
+	// carries a Job Object), so it is used inline rather than assigned to
+	// *exec.Cmd.
+	t2j := commandContext(ctx, t2jCmd, t2jArgs...)
+	t2j.Dir = spec.Package
+	t2j.Stdin = bytes.NewReader(stdout.Bytes())
+	var t2jOut bytes.Buffer
+	t2j.Stdout = &t2jOut
+	if err := t2j.Run(); err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, cerr
+		}
+		return nil, domain.Wrap(domain.ErrIncomplete, "%s: test2json conversion failed; the run has no verdict", spec.Package)
+	}
+	parsedOut := t2jOut.Bytes()
 
 	res, perr := parseEvents(parsedOut, spec, exitCode, elapsed, timedOut)
 	if perr != nil {
@@ -322,13 +343,19 @@ func (c *Compiled) binPath(pkgDir string, tags []string) (string, error) {
 	return filepath.Join(c.binDir, name), nil
 }
 
-// test2jsonPath resolves the test2json binary path once. `goBin -n tool test2json`
+// test2jsonPath resolves the test2json binary path once. `go tool -n test2json`
 // prints the binary path without running it. If resolution fails, it falls back
 // to running test2json through the go binary (direct=false).
+//
+// The argument order is load-bearing: `go -n tool ...` is not a valid command
+// (Go 1.26+: "flag provided but not defined: -n"), so the old spelling left
+// every run on the slow fallback and the documented speed-up never shipped.
+// Resolution runs on Background on purpose: the result is memoized for the
+// whole process, so one caller's cancellation must not poison it.
 func (c *Compiled) test2jsonPath() (path string, direct bool) {
 	c.t2jOnce.Do(func() {
 		goBin := c.Inner.goBin()
-		cmd := commandContext(context.Background(), goBin, "-n", "tool", "test2json")
+		cmd := commandContext(context.Background(), goBin, "tool", "-n", "test2json")
 		var out bytes.Buffer
 		cmd.Stdout = &out
 		cmd.Stderr = &out
@@ -345,6 +372,34 @@ func (c *Compiled) test2jsonPath() (path string, direct bool) {
 		c.t2jDirect = false
 	})
 	return c.t2jPath, c.t2jDirect
+}
+
+// runtimeTestFlags are GOFLAGS entries the compiled path cannot honour: the go
+// command normally forwards them to the test binary, and a direct binary run
+// would silently ignore them.
+var runtimeTestFlags = []string{"run", "skip", "short", "shuffle", "count", "timeout", "parallel", "cpu", "failfast", "v"}
+
+// hasRuntimeTestFlags reports whether the effective GOFLAGS carries a flag that
+// changes which tests run — the one class where parity outranks speed.
+func (c *Compiled) hasRuntimeTestFlags() bool {
+	c.goflagsOnce.Do(func() {
+		cmd := commandContext(context.Background(), c.Inner.goBin(), "env", "GOFLAGS")
+		if out, err := cmd.Output(); err == nil {
+			c.goflags = strings.TrimSpace(string(out))
+		}
+	})
+	for _, tok := range strings.Fields(c.goflags) {
+		if !strings.HasPrefix(tok, "-") {
+			continue
+		}
+		name, _, _ := strings.Cut(strings.TrimLeft(tok, "-"), "=")
+		for _, f := range runtimeTestFlags {
+			if name == f {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // importPath resolves and memoizes the module import path for a directory,

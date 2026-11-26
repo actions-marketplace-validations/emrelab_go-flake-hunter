@@ -417,7 +417,7 @@ func (s *scanner) pkg(ctx context.Context, pkgArg string) error {
 			// "nothing is wrong" and "this probe cannot see this class".
 			// The user must see what was tried. A full scan aggregates the
 			// same fact into one block at the end (B13); a single asked-about
-			// test (repro, --only) keeps its own detail.
+			// test (repro, repro --from-json) keeps its own detail.
 			if s.o.verbose || s.only != "" {
 				writeNoFlake(s.out, s.o, t, res)
 			}

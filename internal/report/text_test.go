@@ -101,3 +101,24 @@ func TestJSONIsMachineReadable(t *testing.T) {
 		t.Errorf("JSON fields missing: %s", b.String())
 	}
 }
+
+// A capsule is shareable data; a control sequence in a note must not reach the
+// reader's terminal through the text or markdown renderer.
+func TestReportsStripTerminalControls(t *testing.T) {
+	c := sample()
+	c.Note = "look\x1b]52;c;cGF3bmVk\x07here"
+	c.Repro.Command = "echo \x1b[31mred\x1b[0m"
+	c.Witness.Victim.Package = "p\x1b[2J"
+	for name, render := range map[string]func(*bytes.Buffer) error{
+		"text":     func(b *bytes.Buffer) error { return report.Text(b, c) },
+		"markdown": func(b *bytes.Buffer) error { return report.Markdown(b, c) },
+	} {
+		var b bytes.Buffer
+		if err := render(&b); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if strings.ContainsRune(b.String(), 0x1b) {
+			t.Errorf("%s output carries a terminal escape: %q", name, b.String())
+		}
+	}
+}

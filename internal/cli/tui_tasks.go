@@ -175,6 +175,13 @@ func tuiRunTask(ctx context.Context, request tuiRequest, config tuiConfig, dirs 
 	var output tuiCapture
 	streams := IO{Stdout: &output, Stderr: task, Progress: task.observe}
 	var args []string
+	// The capsule's store lives next to its package by default; when the user
+	// passed --capsule-dir the package is not inferable from the path, and the
+	// command keeps its old resolution.
+	pkgDir := ""
+	if config.store == "" && request.finding.path != "" {
+		pkgDir = filepath.Dir(filepath.Dir(request.finding.path))
+	}
 	switch request.kind {
 	case "workspace":
 		result.dirs = nil
@@ -221,6 +228,9 @@ func tuiRunTask(ctx context.Context, request tuiRequest, config tuiConfig, dirs 
 		result.notice = "Environment checks finished. These checks do not run target tests."
 	case "replay":
 		args = []string{"replay", request.finding.path, "-n", "3"}
+		if pkgDir != "" {
+			args = append(args, "--pkg", pkgDir)
+		}
 		if request.finding.capsule.Kind == domain.KindEnv {
 			keys := request.finding.capsule.Witness.EnvDiff
 			if len(keys) == 0 {
@@ -242,6 +252,9 @@ func tuiRunTask(ctx context.Context, request tuiRequest, config tuiConfig, dirs 
 		}
 		request.finding.capsule = current
 		args = []string{"compile", request.finding.path, "--print"}
+		if pkgDir != "" {
+			args = append(args, "--pkg", pkgDir)
+		}
 	case "compile":
 		current, err := capsule.NewStore(filepath.Dir(request.finding.path)).Read(strings.TrimSuffix(filepath.Base(request.finding.path), ".json"))
 		if err != nil || !reflect.DeepEqual(current, request.finding.capsule) {
@@ -250,6 +263,9 @@ func tuiRunTask(ctx context.Context, request tuiRequest, config tuiConfig, dirs 
 			return result
 		}
 		args = []string{"compile", request.finding.path}
+		if pkgDir != "" {
+			args = append(args, "--pkg", pkgDir)
+		}
 		streams.ExpectedRegression = []byte(request.preview)
 	}
 	if args != nil {
