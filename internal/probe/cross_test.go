@@ -185,7 +185,29 @@ func TestOrderCrossDoesNotRunVictimAfterFailedPolluter(t *testing.T) {
 		return res, nil
 	}}
 	w, err := probe.OrderCross{PolluterDir: crossPolluterDir}.Probe(context.Background(), crossTarget(), fake)
-	if !errors.Is(err, probe.ErrNotReproduced) || w != nil || victims != 1 {
+	// Two victim runs: the baseline and this round's clean-start check (which
+	// must happen BEFORE the polluter). The failed polluter still never runs
+	// the victim stage.
+	if !errors.Is(err, probe.ErrNotReproduced) || w != nil || victims != 2 {
 		t.Fatalf("w=%+v err=%v victim executions=%d", w, err, victims)
+	}
+}
+
+// A dirty start (the victim already fails before the polluter stage) must not
+// confirm any polluter: measured, leftover state made TestNoop reproduce and
+// the same capsule replayed 0/2 after cleanup.
+func TestOrderCrossRefusesDirtyStart(t *testing.T) {
+	fake := &gotest.Fake{DiscoverFn: func(string) ([]domain.TestID, error) {
+		return []domain.TestID{{Name: "TestNoop"}}, nil
+	}, RunFn: func(s domain.RunSpec) (*domain.RunResult, error) {
+		if s.Package == crossVictimDir {
+			// Fails no matter what ran before it.
+			return gotest.Result(s, map[string]domain.Status{"TestVictim": domain.StatusFail}), nil
+		}
+		return gotest.Result(s, map[string]domain.Status{"TestNoop": domain.StatusPass}), nil
+	}}
+	w, err := probe.OrderCross{PolluterDir: crossPolluterDir}.Probe(context.Background(), crossTarget(), fake)
+	if !errors.Is(err, probe.ErrNotReproduced) || w != nil {
+		t.Fatalf("dirty start produced a witness: w=%+v err=%v", w, err)
 	}
 }

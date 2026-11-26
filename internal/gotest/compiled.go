@@ -246,6 +246,9 @@ func (c *Compiled) Run(ctx context.Context, spec domain.RunSpec) (*domain.RunRes
 
 	res, perr := parseEvents(parsedOut, spec, exitCode, elapsed, timedOut)
 	if perr != nil {
+		if errors.Is(perr, domain.ErrUsage) {
+			return nil, perr
+		}
 		return nil, domain.Wrap(domain.ErrInternal, "could not read test2json output (%s): %s", spec.Package, tail(stderr.String(), 2))
 	}
 
@@ -260,6 +263,11 @@ func (c *Compiled) Run(ctx context.Context, spec domain.RunSpec) (*domain.RunRes
 				o := res.Outcomes[name]
 				o.Status = domain.StatusFail
 				res.Outcomes[name] = o
+				// cmd/go also synthesizes the missing terminal events; without
+				// them Completed() stays false and the probe reports the package
+				// as "incomplete" (measured: a test calling os.Exit read as an
+				// unfinished run instead of a failure).
+				res.Terminal[name] = spec.Count
 			}
 		}
 	}

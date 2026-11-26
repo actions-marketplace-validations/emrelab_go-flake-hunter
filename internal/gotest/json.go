@@ -205,7 +205,7 @@ func Failures(data []byte) ([]domain.TestID, error) {
 		out = append(out, domain.TestID{Package: ev.Package, Name: name})
 	}
 	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("json stream: %w", err)
+		return nil, fmt.Errorf("%w: json stream: %v (a single line over 8 MiB cannot be parsed; split or filter the log)", domain.ErrUsage, err)
 	}
 	if !anyRecord {
 		return nil, fmt.Errorf("%w: no test2json records found", domain.ErrUsage)

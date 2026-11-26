@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/emrelab/go-flake-hunter/internal/domain"
+	"github.com/emrelab/go-flake-hunter/internal/facts"
 	"github.com/emrelab/go-flake-hunter/internal/gotest"
 	"github.com/emrelab/go-flake-hunter/internal/probe"
 )
@@ -125,5 +126,55 @@ func TestRegistryStopsAtFirstWitness(t *testing.T) {
 	}
 	if len(res.Tried) != 1 || res.Tried[0].Probe != "repeat" {
 		t.Fatalf("the tried list must be reported: %+v", res.Tried)
+	}
+}
+
+// A test that SKIPs is not a passing test. "Did not fail" is not evidence:
+// a skip-then-fail sequence used to become a confirmed repeat witness.
+func TestRepeatSkipIsNotEvidence(t *testing.T) {
+	tgt := probe.Target{Test: victim(), Dir: "dir"}
+	fake := &gotest.Fake{RunFn: func(s domain.RunSpec) (*domain.RunResult, error) {
+		return gotest.Result(s, map[string]domain.Status{"TestA": domain.StatusSkip}), nil
+	}}
+	w, err := probe.Repeat{}.Probe(context.Background(), tgt, fake)
+	if w != nil || !errors.Is(err, probe.ErrNotReproduced) {
+		t.Fatalf("w=%+v err=%v; a skipped run must not confirm anything", w, err)
+	}
+}
+
+// A broken verdict from one probe must not veto the remaining hypotheses: a
+// test that needs an environment value fails alone too, and only the env probe
+// can explain it (measured: an env flake was reported as "broken").
+func TestRegistryBrokenDoesNotVetoLaterProbes(t *testing.T) {
+	tgt := probe.Target{
+		Test: domain.TestID{Package: "p", Name: "TestNeedsEnv"},
+		Dir:  t.TempDir(),
+		Facts: facts.PkgFacts{
+			Clause:    map[string]string{"TestNeedsEnv": "p"},
+			EnvReads:  []string{"FIXTURE_MODE"},
+			EnvValues: map[string][]string{"FIXTURE_MODE": {"ci"}},
+		},
+	}
+	fake := &gotest.Fake{RunFn: func(s domain.RunSpec) (*domain.RunResult, error) {
+		if hasEnv(s, "FIXTURE_MODE=ci") {
+			return gotest.Result(s, map[string]domain.Status{"TestNeedsEnv": domain.StatusPass}), nil
+		}
+		return gotest.Result(s, map[string]domain.Status{"TestNeedsEnv": domain.StatusFail}), nil
+	}}
+	res, err := probe.NewRegistry(probe.Repeat{}, probe.Env{}).Run(context.Background(), tgt, fake)
+	if err != nil || res.Witness == nil || res.Witness.Kind != domain.KindEnv {
+		t.Fatalf("the env explanation must win over 'broken': res=%+v err=%v", res, err)
+	}
+}
+
+// And when nothing explains it, the broken verdict still comes back.
+func TestRegistryReportsBrokenWhenNothingExplains(t *testing.T) {
+	tgt := probe.Target{Test: domain.TestID{Package: "p", Name: "TestA"}, Dir: "dir"}
+	fake := &gotest.Fake{RunFn: func(s domain.RunSpec) (*domain.RunResult, error) {
+		return gotest.Result(s, map[string]domain.Status{"TestA": domain.StatusFail}), nil
+	}}
+	_, err := probe.NewRegistry(probe.Repeat{}, probe.Env{}).Run(context.Background(), tgt, fake)
+	if !errors.Is(err, domain.ErrBrokenTest) {
+		t.Fatalf("err = %v, want ErrBrokenTest", err)
 	}
 }

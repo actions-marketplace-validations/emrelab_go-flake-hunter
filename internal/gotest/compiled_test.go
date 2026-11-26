@@ -574,3 +574,27 @@ func TestCompiledHonoursRuntimeTestFlagsFromGOFLAGS(t *testing.T) {
 			slow.State, slow.Status("TestSelected"), fast.State, fast.Status("TestSelected"))
 	}
 }
+
+// os.Exit inside a test kills the process; cmd/go synthesizes the failure from
+// the exit status. The compiled path must do the same, including the terminal
+// count, or the probe reads the run as unfinished and skips the package.
+func TestCompiledSynthesizesFailureForOsExit(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module exiter\n\ngo 1.21\n")
+	writeFile(t, filepath.Join(dir, "exit_test.go"), `package exiter
+
+import (
+	"os"
+	"testing"
+)
+
+func TestExitZero(t *testing.T) { os.Exit(0) }
+`)
+	res, err := (&Compiled{Inner: &Exec{}}).Run(context.Background(), domain.RunSpec{Package: dir, RunRegex: "^TestExitZero$", Count: 1})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !res.Failed("TestExitZero") || !res.Completed("TestExitZero", 1) {
+		t.Fatalf("state=%s status=%v terminal=%d; want a completed failure", res.State, res.Status("TestExitZero"), res.Terminal["TestExitZero"])
+	}
+}

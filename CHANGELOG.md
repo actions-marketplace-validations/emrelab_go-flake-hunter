@@ -21,6 +21,24 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   `go tool` fallback the performance document claimed was gone.
 
 ### Fixed
+- **SKIP is not PASS**: the repeat and env probes now require a measured PASS or
+  FAIL on both sides of a comparison. A skip-then-fail sequence no longer
+  confirms a repeat witness, and a value-dependent env flake that fails in
+  isolation is no longer reported as `broken` — the registry keeps a broken
+  verdict but lets the remaining hypotheses explain it first.
+- **Cross-binary clean start**: every candidate round re-checks that the victim
+  passes before the polluter stage, so leftover state cannot confirm an
+  innocent polluter.
+- **Order seeds**: a permutation whose failure cannot be shrunk no longer ends
+  the shuffle sweep; the next seed is tried.
+- **`os.Exit` tests**: the compiled path synthesizes the missing terminal events
+  from a non-zero exit, so a test that kills the process is a failure, not an
+  unfinished run.
+- **`TestMain` that exits non-zero for `-list`**: `Discover` keeps the printed
+  test list instead of reporting a build failure (a package that tests fine was
+  skipped with exit 6).
+- **Oversized log lines**: a `--from-json` line beyond the 8 MiB buffer is a
+  usage error naming the limit, not an internal error.
 - **Replay/compile attribution**: an unverified "victim fails in isolation"
   precondition now rejects witnesses whose victim fails on its own, instead of
   reporting an unrelated breakage as a reproduced flake.

@@ -55,8 +55,12 @@ func (p Repeat) Probe(ctx context.Context, tgt Target, r gotest.Runner) (*domain
 		return nil, buildFailed(tgt, rep)
 	}
 	if !rep.Failed(tgt.Test.Name) {
-		// Passed on a single run and on the repeat: this class is out.
-		return nil, ErrNotReproduced
+		// Only a measured PASS rules the class out. A SKIP or a missing result
+		// is not a pass; it is absence of evidence.
+		if rep.Passed(tgt.Test.Name) {
+			return nil, ErrNotReproduced
+		}
+		return nil, domain.Wrap(domain.ErrNotReproduced, "%s skipped instead of running; no repeat evidence", tgt.Test.Name)
 	}
 
 	// It failed. Broken or flaky? A single run decides: broken tests fail
@@ -76,6 +80,11 @@ func (p Repeat) Probe(ctx context.Context, tgt Target, r gotest.Runner) (*domain
 		// Fails on its own too: not a flake, a broken test.
 		return nil, domain.ErrBrokenTest
 	}
+	if !base.Passed(tgt.Test.Name) {
+		// The single-run baseline skipped: "it fails only when repeated" cannot
+		// be established from an unobserved baseline.
+		return nil, domain.Wrap(domain.ErrNotReproduced, "%s skipped in the single-run baseline", tgt.Test.Name)
+	}
 
 	// Confirm determinism: a single failing round can be noise.
 	again, err := runFor(domain.FreshRuns(ctx), r, tgt.Test.Name, domain.RunSpec{
@@ -90,6 +99,9 @@ func (p Repeat) Probe(ctx context.Context, tgt Target, r gotest.Runner) (*domain
 		return nil, buildFailed(tgt, again)
 	}
 	if !again.Failed(tgt.Test.Name) {
+		if !again.Passed(tgt.Test.Name) {
+			return nil, domain.Wrap(domain.ErrNotReproducible, "%s skipped on the second -count=%d run", tgt.Test.Name, count)
+		}
 		return nil, domain.Wrap(domain.ErrNotReproducible, "%s did not fail on the second -count=%d run", tgt.Test.Name, count)
 	}
 

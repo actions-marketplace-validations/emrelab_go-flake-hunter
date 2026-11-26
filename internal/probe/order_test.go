@@ -399,3 +399,47 @@ func TestOrderIgnoresShortPermutation(t *testing.T) {
 		t.Fatalf("expected 3 runs (baseline + 2 seeds), got %d", fake.CallCount())
 	}
 }
+
+// A seed whose failure cannot be shrunk (here: the victim ran first, so there
+// is no candidate before it) must not end the search. Measured: an unrelated
+// first-seed failure hid the real polluter that a later seed orders correctly.
+func TestOrderTriesNextSeedAfterUnshrinkableFailure(t *testing.T) {
+	tgt := probe.Target{
+		Test: domain.TestID{Package: "p", Name: "TestVictim"},
+		Dir:  t.TempDir(),
+		Facts: facts.PkgFacts{Clause: map[string]string{
+			"TestVictim":   "p",
+			"TestPolluter": "p",
+		}},
+	}
+	fake := &gotest.Fake{RunFn: func(s domain.RunSpec) (*domain.RunResult, error) {
+		switch {
+		case strings.HasPrefix(s.RunRegex, "^TestFlakeWitness"):
+			return gotest.Result(s, map[string]domain.Status{
+				"TestFlakeWitness/victim/TestVictim": domain.StatusFail,
+			}), nil
+		case s.RunRegex == "^TestVictim$":
+			return gotest.Result(s, map[string]domain.Status{"TestVictim": domain.StatusPass}), nil
+		case s.ShuffleSeed == 1:
+			res := gotest.Result(s, map[string]domain.Status{"TestVictim": domain.StatusFail})
+			res.Order = []string{"TestVictim", "TestPolluter"} // victim first: unshrinkable
+			return res, nil
+		case s.ShuffleSeed == 2:
+			res := gotest.Result(s, map[string]domain.Status{"TestVictim": domain.StatusFail})
+			res.Order = []string{"TestPolluter", "TestVictim"}
+			return res, nil
+		}
+		return gotest.Result(s, map[string]domain.Status{
+			"TestPolluter": domain.StatusPass,
+			"TestVictim":   domain.StatusPass,
+		}), nil
+	}}
+
+	w, err := probe.Order{Seeds: []int64{1, 2}, Verify: 2}.Probe(context.Background(), tgt, fake)
+	if err != nil {
+		t.Fatalf("the second seed must still be tried: %v", err)
+	}
+	if len(w.Polluters) != 1 || w.Polluters[0].Name != "TestPolluter" {
+		t.Fatalf("polluters = %v, want [TestPolluter]", w.Polluters)
+	}
+}

@@ -9,7 +9,7 @@
 
 > Reproduce the flake in 30 seconds instead of 30 minutes — and leave a permanent regression test in the repo.
 
-299 tests + 2 fuzz targets · CI on linux/macos/windows + a nightly sweep · zero dependencies ·
+307 tests + 2 fuzz targets · CI on linux/macos/windows + a nightly sweep · zero dependencies ·
 eight real upstream flake cases reduced to witnesses ([evidence](docs/real-world/README.md))
 
 Fixes found this way are merged upstream: [tailscale/tailscale#22408 and

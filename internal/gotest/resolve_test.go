@@ -55,3 +55,35 @@ func writeNested(t *testing.T, path, content string) {
 	}
 	writeFile(t, path, content)
 }
+
+// A TestMain that exits non-zero even for -test.list still prints the list.
+// Reporting that as a build failure skipped the package entirely (measured:
+// exit 6 "could not be listed" on a package that tests fine).
+func TestDiscoverListsThroughNonZeroTestMain(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module tm\n\ngo 1.21\n")
+	writeFile(t, filepath.Join(dir, "tm_test.go"), `package tm
+
+import (
+	"os"
+	"testing"
+)
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if code != 0 {
+		os.Exit(code)
+	}
+	os.Exit(7)
+}
+
+func TestOK(t *testing.T) {}
+`)
+	tests, err := (&Exec{}).Discover(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(tests) != 1 || tests[0].Name != "TestOK" {
+		t.Fatalf("tests = %v, want [TestOK]", tests)
+	}
+}

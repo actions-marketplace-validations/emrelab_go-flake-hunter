@@ -159,7 +159,20 @@ func (p Order) Probe(ctx context.Context, tgt Target, r gotest.Runner) (*domain.
 			return nil, buildFailed(tgt, res)
 		}
 		if res.Failed(tgt.Test.Name) {
-			return p.minimize(ctx, tgt, r, res.Order, verify, seed)
+			w, err := p.minimize(ctx, tgt, r, res.Order, verify, seed)
+			if err == nil {
+				return w, nil
+			}
+			// A suspicion is a result; anything that is not "this seed does not
+			// explain it" (build, budget, cancel, internal) stops the search.
+			if !errors.Is(err, domain.ErrNotReproduced) {
+				return nil, err
+			}
+			// The victim failed under this permutation but no preceding test
+			// reproduces it (measured: an unrelated first-seed failure hid the
+			// real polluter that a later seed orders correctly). Try the next
+			// seed instead of ending the search on the first miss.
+			continue
 		}
 		// Only count permutations of the expected size; a changed test set
 		// mid-sweep would otherwise look like exhaustion.

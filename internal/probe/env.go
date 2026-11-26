@@ -62,7 +62,13 @@ func (p Env) Probe(ctx context.Context, tgt Target, r gotest.Runner) (*domain.Wi
 	if baseline.BuildFailed {
 		return nil, buildFailed(tgt, baseline)
 	}
-	baselineFailed := baseline.Failed(tgt.Test.Name)
+	baselineStatus, baselineMeasured := measuredStatus(baseline, tgt.Test.Name)
+	if !baselineMeasured {
+		// Without a measured PASS or FAIL there is no "difference" to look for:
+		// a skipped baseline would make any variant look like a flake (or hide one).
+		return nil, domain.Wrap(domain.ErrNotReproduced, "%s skipped in the baseline run; no env comparison", tgt.Test.Name)
+	}
+	baselineFailed := baselineStatus == domain.StatusFail
 
 	for _, key := range keys {
 		values, ok := tgt.Facts.EnvValues[key]
@@ -83,8 +89,10 @@ func (p Env) Probe(ctx context.Context, tgt Target, r gotest.Runner) (*domain.Wi
 			if res.BuildFailed {
 				return nil, buildFailed(tgt, res)
 			}
-			// The flake is the DIFFERENCE: fail here, pass there.
-			if res.Failed(tgt.Test.Name) == baselineFailed {
+			// The flake is the DIFFERENCE: fail here, pass there. Both sides
+			// must be measured; SKIP on either side is not an outcome.
+			st, measured := measuredStatus(res, tgt.Test.Name)
+			if !measured || (st == domain.StatusFail) == baselineFailed {
 				continue
 			}
 
@@ -125,6 +133,14 @@ func (p Env) verify(ctx context.Context, r gotest.Runner, base, variant domain.R
 		if b.Failed(tgt.Test.Name) == v.Failed(tgt.Test.Name) {
 			return domain.Wrap(domain.ErrNotReproducible,
 				"env witness did not reproduce on verification run %d/%d", i+1, n)
+		}
+		if _, ok := measuredStatus(b, tgt.Test.Name); !ok {
+			return domain.Wrap(domain.ErrNotReproducible,
+				"env verification run %d/%d did not observe the baseline as PASS or FAIL", i+1, n)
+		}
+		if _, ok := measuredStatus(v, tgt.Test.Name); !ok {
+			return domain.Wrap(domain.ErrNotReproducible,
+				"env verification run %d/%d did not observe the variant as PASS or FAIL", i+1, n)
 		}
 	}
 	return nil

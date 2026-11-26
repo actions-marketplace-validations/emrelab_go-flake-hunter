@@ -86,6 +86,7 @@ type Attempt struct {
 func (r *Registry) Run(ctx context.Context, tgt Target, runner gotest.Runner) (*Result, error) {
 	res := &Result{}
 	var refusal error // a probe that found the shape but cannot express it (#6)
+	var broken error  // a probe observed the victim failing alone
 	for _, p := range r.probes {
 		if err := ctx.Err(); err != nil {
 			return res, err
@@ -111,6 +112,15 @@ func (r *Registry) Run(ctx context.Context, tgt Target, runner gotest.Runner) (*
 				res.Suspected = w
 				continue
 			}
+			if errorsIs(err, domain.ErrBrokenTest) {
+				// "Fails in isolation" is not proof that no other class
+				// explains it: a test that needs an environment value fails
+				// alone unless that value is set (measured: an env flake read
+				// as broken, and the env probe never ran). Keep the verdict
+				// and let the remaining hypotheses speak first.
+				broken = err
+				continue
+			}
 			if isNotReproduced(err) {
 				continue
 			}
@@ -130,6 +140,11 @@ func (r *Registry) Run(ctx context.Context, tgt Target, runner gotest.Runner) (*
 	if res.Suspected != nil {
 		return res, domain.ErrNotReproducible
 	}
+	if broken != nil {
+		// Nothing explained it, and the victim does fail on its own: report
+		// the broken verdict instead of a generic "not reproduced".
+		return res, broken
+	}
 	if refusal != nil {
 		return res, refusal
 	}
@@ -138,6 +153,20 @@ func (r *Registry) Run(ctx context.Context, tgt Target, runner gotest.Runner) (*
 
 func isNotReproduced(err error) bool {
 	return err != nil && (errorsIs(err, domain.ErrNotReproduced))
+}
+
+// measuredStatus returns the outcome only when it was actually observed as
+// PASS or FAIL. SKIP and a missing outcome are NOT evidence.
+func measuredStatus(res *domain.RunResult, name string) (domain.Status, bool) {
+	if res == nil {
+		return domain.StatusSkip, false
+	}
+	switch st := res.Status(name); st {
+	case domain.StatusPass, domain.StatusFail:
+		return st, true
+	default:
+		return domain.StatusSkip, false
+	}
 }
 
 // runFor rejects a real run that lacks a terminal result for the probe's victim.

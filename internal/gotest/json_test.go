@@ -160,3 +160,16 @@ func TestFailuresRejectsNonRecordsAndTruncatedStreams(t *testing.T) {
 		t.Errorf("complete log: ids=%v err=%v, want empty, nil", ids, err)
 	}
 }
+
+// A log line beyond the scanner buffer is a usage problem with an actionable
+// message, not an internal error (measured: exit 10 "token too long").
+func TestFailuresOversizedLineIsUsage(t *testing.T) {
+	huge := `{"Action":"fail","Package":"p","Test":"T","Output":"` + strings.Repeat("A", 9<<20) + `"}`
+	_, err := Failures([]byte(huge))
+	if !errors.Is(err, domain.ErrUsage) {
+		t.Fatalf("err = %v, want ErrUsage", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "8 MiB") {
+		t.Errorf("the message should name the limit: %v", err)
+	}
+}
