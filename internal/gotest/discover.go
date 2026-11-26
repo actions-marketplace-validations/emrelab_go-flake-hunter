@@ -36,15 +36,22 @@ func (e *Exec) Discover(ctx context.Context, pkgDir string) ([]domain.TestID, er
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		detail := strings.TrimSpace(stderr.String())
-		if detail == "" {
-			detail = strings.TrimSpace(stdout.String())
+		// A TestMain that exits non-zero even for -test.list still lets the
+		// binary print the list first (measured: a successful suite with a
+		// non-zero TestMain exited 7/1 and the package was reported as a build
+		// failure). Build failures print diagnostics and no test names, so the
+		// list itself is the discriminator.
+		if !strings.Contains(stdout.String(), "Test") {
+			detail := strings.TrimSpace(stderr.String())
+			if detail == "" {
+				detail = strings.TrimSpace(stdout.String())
+			}
+			if detail == "" {
+				detail = err.Error()
+			}
+			return nil, domain.Wrap(domain.ErrBuildFailed, "%s could not be listed: %s",
+				pkgDir, firstLines(detail, 3))
 		}
-		if detail == "" {
-			detail = err.Error()
-		}
-		return nil, domain.Wrap(domain.ErrBuildFailed, "%s could not be listed: %s",
-			pkgDir, firstLines(detail, 3))
 	}
 
 	importPath, err := e.importPath(ctx, pkgDir)

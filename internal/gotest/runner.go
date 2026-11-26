@@ -156,6 +156,9 @@ func (e *Exec) Run(ctx context.Context, spec domain.RunSpec) (*domain.RunResult,
 	res, perr := parseEvents(stdout.Bytes(), spec, exitCode, elapsed, timedOut)
 	if perr != nil {
 		// Unparseable stream: surface the raw tail, never pretend success.
+		if errors.Is(perr, domain.ErrUsage) {
+			return nil, perr
+		}
 		return nil, domain.Wrap(domain.ErrInternal, "could not read test2json output (%s): %s",
 			spec.Package, tail(stderr.String(), 2))
 	}

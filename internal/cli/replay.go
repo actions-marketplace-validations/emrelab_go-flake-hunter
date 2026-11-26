@@ -61,6 +61,22 @@ func replayCmd(ctx context.Context, args []string, out IO) error {
 	if n <= 0 {
 		return domain.Wrap(domain.ErrUsage, "-n must be positive")
 	}
+	// The value never lives in the capsule, so the printed reproduce command
+	// carries a placeholder. Replaying with the placeholder is not a run: it
+	// reads as "never reproduced — stale capsule", a false diagnosis.
+	var envValue string
+	if c.Kind == domain.KindEnv {
+		key, value, ok := strings.Cut(envKV, "=")
+		if !ok || !slices.Contains(c.Witness.EnvDiff, key) {
+			return domain.Wrap(domain.ErrUsage, "supply --env KEY=VALUE for a recorded key: %s",
+				strings.Join(c.Witness.EnvDiff, ", "))
+		}
+		if value == policy.RedactionPlaceholder {
+			return domain.Wrap(domain.ErrUsage,
+				"--env carries the redaction placeholder; supply the real value for %s", key)
+		}
+		envValue = envKV
+	}
 
 	pkgDir, f, err := replayTarget(ctx, pkgArg, c)
 	if err != nil {
@@ -88,13 +104,7 @@ func replayCmd(ctx context.Context, args []string, out IO) error {
 	switch c.Kind {
 	case domain.KindEnv:
 		// The value is not in the capsule and never will be: the user provides it.
-		// Without it the run says "not reproduced" — correct, the info is missing.
-		key, _, ok := strings.Cut(envKV, "=")
-		if !ok || !slices.Contains(c.Witness.EnvDiff, key) {
-			return domain.Wrap(domain.ErrUsage, "supply --env KEY=VALUE for a recorded key: %s",
-				strings.Join(c.Witness.EnvDiff, ", "))
-		}
-		spec.Env = []string{envKV}
+		spec.Env = []string{envValue}
 	case domain.KindRepeat:
 		spec.RunRegex = "^" + c.Witness.Victim.Name + "$"
 		spec.Count = replayRepeatCount(c)
@@ -113,6 +123,32 @@ func replayCmd(ctx context.Context, args []string, out IO) error {
 	spec.Short = c.Witness.Flags.Short
 	spec.Tags = c.Witness.Flags.Tags
 	runner := &gotest.Exec{}
+	// The witness presupposes an isolated PASS: a victim that already fails
+	// alone makes any later failure unattributable to the recorded polluter.
+	// (Measured: a victim changed to fail unconditionally turned the replay of
+	// an old repeat capsule into "deterministic" and compile --verify into
+	// "verified".)
+	var firstErr error
+	if c.Kind != domain.KindEnv && !c.Witness.CrossBinary && !c.Witness.CrossClause {
+		iso := domain.RunSpec{
+			Package:  pkgDir,
+			RunRegex: "^" + c.Witness.Victim.Name + "$",
+			Count:    1,
+			Parallel: 1,
+			Short:    spec.Short,
+			Tags:     spec.Tags,
+		}
+		res, err := runner.Run(ctx, iso)
+		switch {
+		case err != nil:
+			firstErr = err
+		case res.BuildFailed:
+			firstErr = buildFailure(pkgDir, res)
+		case res.Failed(c.Witness.Victim.Name):
+			firstErr = domain.Wrap(domain.ErrNotReproducible,
+				"%s fails in isolation; the recorded witness does not explain this failure", c.Witness.Victim.Name)
+		}
+	}
 	outcome := func() (bool, error) {
 		if c.Witness.CrossClause {
 			res, err := runner.Run(ctx, spec)
@@ -164,8 +200,7 @@ func replayCmd(ctx context.Context, args []string, out IO) error {
 	}
 
 	var failed int
-	var firstErr error
-	for i := 0; i < n; i++ {
+	for i := 0; i < n && firstErr == nil; i++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}

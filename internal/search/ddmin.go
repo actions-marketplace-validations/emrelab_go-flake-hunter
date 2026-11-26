@@ -14,8 +14,13 @@ import (
 // a published witness.
 type Predicate func(ctx context.Context, subset []domain.TestID) (bool, error)
 
-// Minimize returns the smallest subset the predicate still accepts, and
+// Minimize returns a 1-minimal subset the predicate still accepts, and
 // confirms it by re-running the predicate verify times.
+//
+// "1-minimal" is the honest claim: dropping any single member breaks the
+// predicate. It is NOT a global minimum for a non-monotone predicate (ddmin
+// can stop at AB while a lone D would also reproduce); order-probe predicates
+// are non-monotone, so reports must not promise more than this.
 //
 // verify < 1 is coerced to 1: publishing an unverified witness is the one
 // outcome worse than finding nothing.

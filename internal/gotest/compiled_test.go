@@ -524,3 +524,77 @@ exec %s "$@"
 		t.Errorf("Race log must NOT contain 'test -c' (a race build is not the compiled path), got: %s", log)
 	}
 }
+
+// A passing test that PRINTS a result-shaped line must stay a pass. Plain
+// -test.v let the framework's converter turn the line into a fail event, and
+// the fast path (the default) then reported the test as broken.
+func TestCompiledIgnoresResultShapedTestOutput(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module phantom\n\ngo 1.21\n")
+	writeFile(t, filepath.Join(dir, "phantom_test.go"), `package phantom
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestPass(t *testing.T) {
+	fmt.Println("--- FAIL: TestPass (0.00s)")
+}
+`)
+	spec := domain.RunSpec{Package: dir, RunRegex: "^TestPass$", Count: 1}
+	for name, r := range map[string]Runner{"exec": &Exec{}, "compiled": &Compiled{Inner: &Exec{}}} {
+		res, err := r.Run(context.Background(), spec)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if res.Failed("TestPass") || res.State != domain.RunPassed {
+			t.Errorf("%s: printed failure line became a verdict: state=%s status=%v", name, res.State, res.Status("TestPass"))
+		}
+	}
+}
+
+// GOFLAGS test-runtime flags select which tests run. The compiled path runs the
+// built binary directly, so it cannot honour them; parity with the go test path
+// comes first, measured on the same package.
+func TestCompiledHonoursRuntimeTestFlagsFromGOFLAGS(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module flags\n\ngo 1.21\n")
+	writeFile(t, filepath.Join(dir, "flags_test.go"), "package flags\n\nimport \"testing\"\n\nfunc TestSelected(t *testing.T) {}\n")
+	t.Setenv("GOFLAGS", "-skip=TestSelected")
+
+	spec := domain.RunSpec{Package: dir, RunRegex: "^TestSelected$", Count: 1}
+	slow, errSlow := (&Exec{}).Run(context.Background(), spec)
+	fast, errFast := (&Compiled{Inner: &Exec{}}).Run(context.Background(), spec)
+	if (errSlow == nil) != (errFast == nil) {
+		t.Fatalf("error class diverged: slow=%v fast=%v", errSlow, errFast)
+	}
+	if slow.State != fast.State || slow.Status("TestSelected") != fast.Status("TestSelected") {
+		t.Errorf("engines disagree under GOFLAGS: slow=%s/%v fast=%s/%v",
+			slow.State, slow.Status("TestSelected"), fast.State, fast.Status("TestSelected"))
+	}
+}
+
+// os.Exit inside a test kills the process; cmd/go synthesizes the failure from
+// the exit status. The compiled path must do the same, including the terminal
+// count, or the probe reads the run as unfinished and skips the package.
+func TestCompiledSynthesizesFailureForOsExit(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module exiter\n\ngo 1.21\n")
+	writeFile(t, filepath.Join(dir, "exit_test.go"), `package exiter
+
+import (
+	"os"
+	"testing"
+)
+
+func TestExitZero(t *testing.T) { os.Exit(0) }
+`)
+	res, err := (&Compiled{Inner: &Exec{}}).Run(context.Background(), domain.RunSpec{Package: dir, RunRegex: "^TestExitZero$", Count: 1})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !res.Failed("TestExitZero") || !res.Completed("TestExitZero", 1) {
+		t.Fatalf("state=%s status=%v terminal=%d; want a completed failure", res.State, res.Status("TestExitZero"), res.Terminal["TestExitZero"])
+	}
+}

@@ -102,6 +102,27 @@ func (p OrderCross) Probe(ctx context.Context, tgt Target, r gotest.Runner) (*do
 			return false, nil // no polluter ran: not an order witness, drop the empty set
 		}
 		round++
+		// Clean-start check: the victim must pass BEFORE the polluter stage.
+		// Without it, state left behind by a previous round (a file, a port)
+		// makes an innocent test look sufficient once ddmin shrinks the set —
+		// measured: TestNoop was confirmed after TestRealPolluter's file
+		// survived, and the same capsule replayed 0/2 after cleanup.
+		alone := domain.RunSpec{
+			Package:  tgt.Dir,
+			RunRegex: "^" + regexp.QuoteMeta(tgt.Test.Name) + "$",
+			Count:    1, Parallel: 1,
+			Source: fmt.Sprintf("cross/%d/0", round),
+		}
+		res0, err := runFor(ctx, r, tgt.Test.Name, alone)
+		if err != nil {
+			return false, err
+		}
+		if res0.BuildFailed {
+			return false, buildFailed(tgt, res0)
+		}
+		if !res0.Passed(tgt.Test.Name) {
+			return false, nil // dirty or dirty-able start: this subset proves nothing
+		}
 		s1 := domain.RunSpec{
 			Package:  p.PolluterDir,
 			RunRegex: unionRegex(subset),

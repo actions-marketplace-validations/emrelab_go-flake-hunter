@@ -69,7 +69,7 @@ func Markdown(w io.Writer, c domain.Capsule) error {
 	}
 
 	if c.Repro.Command != "" {
-		fmt.Fprintf(&b, "\nReproduce:\n\n```sh\n%s\n```\n", c.Repro.Command)
+		fmt.Fprintf(&b, "\nReproduce:\n\n```sh\n%s\n```\n", plain(c.Repro.Command))
 	}
 	// The skip condition rendered next to the command it gates (#8).
 	if c.Kind == domain.KindEnv && len(c.Witness.EnvDiff) > 0 {
@@ -88,7 +88,8 @@ func Markdown(w io.Writer, c domain.Capsule) error {
 	return err
 }
 
-// escapePipe keeps a value from breaking the table it lives in.
+// escapePipe keeps a value from breaking the table it lives in, and keeps
+// terminal control sequences out of a shared report.
 func escapePipe(s string) string {
-	return strings.ReplaceAll(s, "|", "\\|")
+	return strings.ReplaceAll(plain(s), "|", "\\|")
 }

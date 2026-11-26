@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 
 	"github.com/emrelab/go-flake-hunter/internal/domain"
 )
@@ -23,7 +24,7 @@ func Text(w io.Writer, c domain.Capsule) error {
 		label = "suspected flake"
 	}
 	fmt.Fprintf(&b, "\n%s: %s\n", label, v.Victim.Name)
-	fmt.Fprintf(&b, "  package      : %s\n", v.Victim.Package)
+	fmt.Fprintf(&b, "  package      : %s\n", plain(v.Victim.Package))
 	fmt.Fprintf(&b, "  class        : %s\n", v.Kind)
 
 	if len(v.Polluters) > 0 {
@@ -36,13 +37,13 @@ func Text(w io.Writer, c domain.Capsule) error {
 				names[i] = p.Package + "." + p.Name
 			}
 		}
-		fmt.Fprintf(&b, "  polluter     : %s\n", strings.Join(names, ", "))
+		fmt.Fprintf(&b, "  polluter     : %s\n", plain(strings.Join(names, ", ")))
 	}
 	if v.CrossBinary {
 		b.WriteString("  witness      : cross-binary (two `go test` processes; the pollution crosses the process boundary — files, ports, cwd)\n")
 	}
 	if len(v.EnvDiff) > 0 {
-		fmt.Fprintf(&b, "  environment  : %s\n", strings.Join(v.EnvDiff, ", "))
+		fmt.Fprintf(&b, "  environment  : %s\n", plain(strings.Join(v.EnvDiff, ", ")))
 	}
 
 	fmt.Fprintf(&b, "  run          : %d/%d failed\n", c.Observation.Failures, c.Observation.Runs)
@@ -56,16 +57,16 @@ func Text(w io.Writer, c domain.Capsule) error {
 	}
 
 	if len(c.Evidence.ExternalDependencies) > 0 {
-		fmt.Fprintf(&b, "  dependencies : %s (static; not a proven cause)\n", strings.Join(c.Evidence.ExternalDependencies, "; "))
+		fmt.Fprintf(&b, "  dependencies : %s (static; not a proven cause)\n", plain(strings.Join(c.Evidence.ExternalDependencies, "; ")))
 	}
 	if g := sharedGlobalLine(c); g != "" {
-		fmt.Fprintf(&b, "  evidence     : %s\n", g)
+		fmt.Fprintf(&b, "  evidence     : %s\n", plain(g))
 	}
 	if len(c.Evidence.FilesTouched) > 0 {
-		fmt.Fprintf(&b, "  files        : %s\n", strings.Join(c.Evidence.FilesTouched, "; "))
+		fmt.Fprintf(&b, "  files        : %s\n", plain(strings.Join(c.Evidence.FilesTouched, "; ")))
 	}
 
-	fmt.Fprintf(&b, "\n  reproduce:\n    %s\n", c.Repro.Command)
+	fmt.Fprintf(&b, "\n  reproduce:\n    %s\n", plain(c.Repro.Command))
 	// The skip condition belongs where the human reads the reproduce block:
 	// without it an env regression that SKIPs looks verified-green in CI.
 	if c.Kind == domain.KindEnv && len(c.Witness.EnvDiff) > 0 {
@@ -80,7 +81,7 @@ func Text(w io.Writer, c domain.Capsule) error {
 	// Note: the witness was verified but the evidence is weak at one point
 	// (e.g. it did not reproduce in a --race run). One line, this is what the user reads.
 	if c.Note != "" {
-		fmt.Fprintf(&b, "  note         : %s\n", c.Note)
+		fmt.Fprintf(&b, "  note         : %s\n", plain(c.Note))
 	}
 
 	_, err := io.WriteString(w, b.String())
@@ -110,6 +111,22 @@ func sharedGlobalLine(c domain.Capsule) string {
 	}
 	sortStrings(lines)
 	return lines[0]
+}
+
+// plain strips terminal control characters from capsule-supplied text before
+// it reaches a human terminal. A capsule is shareable data: an OSC-52 sequence
+// in a note is a clipboard write on the reader's machine. TUI output already
+// goes through displayText; the report renderers are the other human surface.
+func plain(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '	' {
+			return r
+		}
+		if unicode.IsControl(r) {
+			return '?'
+		}
+		return r
+	}, s)
 }
 
 func sortStrings(s []string) {
@@ -184,8 +201,8 @@ func attemptReason(a AttemptInfo) string {
 // answer: the next run can start from the probes already known to say nothing.
 func Partial(w io.Writer, c domain.Capsule, attempts []AttemptInfo, path, hint string) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "\ninconclusive: %s (%s)\n", c.Target.Victim, c.Note)
-	fmt.Fprintf(&b, "  package      : %s\n", c.Target.Package)
+	fmt.Fprintf(&b, "\ninconclusive: %s (%s)\n", plain(c.Target.Victim), plain(c.Note))
+	fmt.Fprintf(&b, "  package      : %s\n", plain(c.Target.Package))
 	if len(attempts) > 0 {
 		b.WriteString("  tried:\n")
 		for _, a := range attempts {

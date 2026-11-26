@@ -96,14 +96,19 @@ func parseEvents(data []byte, spec domain.RunSpec, exitCode int, elapsed time.Du
 				Status:  worst(prev.Status, st, ok),
 				Elapsed: time.Duration(ev.Elapsed * float64(time.Second)),
 			}
-			if b := outputs[ev.Test]; b != nil {
-				o.Output = Normalize(b.String())
-			}
 			res.Outcomes[ev.Test] = o
 		}
 	}
 	if err := sc.Err(); err != nil {
 		return nil, fmt.Errorf("json stream: %w", err)
+	}
+	// Normalize once, after the stream: doing it per terminal event re-scanned
+	// the whole accumulated output each round (quadratic on -count=N).
+	for name, o := range res.Outcomes {
+		if b := outputs[name]; b != nil {
+			o.Output = Normalize(b.String())
+			res.Outcomes[name] = o
+		}
 	}
 
 	// Build/setup output: merge into the BuildOutput field.
@@ -162,6 +167,7 @@ func Failures(data []byte) ([]domain.TestID, error) {
 
 	seen := map[string]bool{}
 	anyRecord := false
+	started, terminal := 0, 0
 	var out []domain.TestID
 	for sc.Scan() {
 		line := bytes.TrimSpace(sc.Bytes())
@@ -172,7 +178,18 @@ func Failures(data []byte) ([]domain.TestID, error) {
 		if err := json.Unmarshal(line, &ev); err != nil {
 			continue
 		}
+		// A JSON object is not necessarily a test2json record: `{}` unmarshals
+		// fine and would otherwise count as evidence that the log is valid.
+		if !knownAction(ev.Action) {
+			continue
+		}
 		anyRecord = true
+		switch ev.Action {
+		case "run":
+			started++
+		case "pass", "fail", "skip":
+			terminal++
+		}
 		if ev.Action != "fail" || ev.Test == "" {
 			continue // package-level fails are build/setup failures: no test to repro
 		}
@@ -188,10 +205,16 @@ func Failures(data []byte) ([]domain.TestID, error) {
 		out = append(out, domain.TestID{Package: ev.Package, Name: name})
 	}
 	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("json stream: %w", err)
+		return nil, fmt.Errorf("%w: json stream: %v (a single line over 8 MiB cannot be parsed; split or filter the log)", domain.ErrUsage, err)
 	}
 	if !anyRecord {
 		return nil, fmt.Errorf("%w: no test2json records found", domain.ErrUsage)
+	}
+	// A test that started and never reported a terminal event is a truncated or
+	// timed-out stream, not a clean log. Reading it as "no failures" tells CI
+	// its evidence is empty when the run was cut short.
+	if started > terminal {
+		return nil, fmt.Errorf("%w: log ends with %d started test(s) and no result; the stream is truncated", domain.ErrUsage, started-terminal)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Package != out[j].Package {
@@ -200,6 +223,16 @@ func Failures(data []byte) ([]domain.TestID, error) {
 		return out[i].Name < out[j].Name
 	})
 	return out, nil
+}
+
+// knownAction lists the actions test2json emits. Anything else is not evidence
+// that the input is a test log.
+func knownAction(action string) bool {
+	switch action {
+	case "run", "pause", "cont", "pass", "bench", "fail", "output", "skip", "start":
+		return true
+	}
+	return false
 }
 
 func statusOf(action string) domain.Status {

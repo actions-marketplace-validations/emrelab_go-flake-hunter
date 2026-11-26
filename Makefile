@@ -49,8 +49,11 @@ tui-smoke: build
 	python3 scripts/tui-smoke.py --binary ./$(BINARY)
 
 # Using our own tool on ourselves: a state leak would surface here.
+# The timeout matches nightly.yml's rationale: the subprocess-heavy cli
+# packages take ~60 s per round here, so -count=10 needs headroom or Go's
+# default 10m package panic reads as a flake.
 test-repeat:
-	go test -count=10 ./...
+	go test -count=10 -timeout 45m ./...
 
 # Where the suite's wall time goes, and how many subprocesses it spawns.
 # Operator tool, not a gate: see the header of the script.

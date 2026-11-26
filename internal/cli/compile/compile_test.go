@@ -226,3 +226,41 @@ func TestCompilePreservesMultipleVictimsInOneSource(t *testing.T) {
 		t.Fatalf("regressions after fix: %v\n%s", err, out)
 	}
 }
+
+// compile --verify must not stamp "verified" when the victim now fails on its
+// own: the artifact's RED would be attributed to a flake that is no longer the
+// recorded one.
+func TestCompileVerifyRejectsVictimFailingInIsolation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	dir := clitest.FixtureDir(t, "repeat-accumulate")
+	store := filepath.Join(t.TempDir(), "c")
+	if code, _, errOut := clitest.Run("hunt", dir, "-capsule-dir", store, "--format", "json"); code != domain.ExitOK {
+		t.Fatalf("hunt code=%d %s", code, errOut)
+	}
+	path := filepath.Join(dir, "accum_test.go")
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(string(src), "	mu.Lock()",
+		"	t.Fatalf(\"unrelated breakage: config file missing\")\n	mu.Lock()", 1)
+	if changed == string(src) {
+		t.Fatal("fixture shape changed; update the mutation")
+	}
+	if err := os.WriteFile(path, []byte(changed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, errOut := clitest.Run("compile", "-capsule-dir", store, "--pkg", dir, "--verify")
+	if code != domain.ExitNotReproduced {
+		t.Fatalf("code = %d, want %d (%s%s)", code, domain.ExitNotReproduced, out, errOut)
+	}
+	if strings.Contains(out, "RED (verified") {
+		t.Errorf("unrelated failure recorded as verified:\n%s", out)
+	}
+	if st := clitest.StoredVerifyStatus(t, store); st != "" {
+		t.Errorf("verifyStatus = %q, want empty (no verdict reached)", st)
+	}
+}

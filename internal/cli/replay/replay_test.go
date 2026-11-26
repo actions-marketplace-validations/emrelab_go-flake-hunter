@@ -436,3 +436,38 @@ func TestAuditC6_PrintedReplayRunsFromCleanCheckout(t *testing.T) {
 		t.Fatalf("replay exit=%d %s %s", code, out, stderr)
 	}
 }
+
+// A victim changed to fail unconditionally is not evidence that the recorded
+// witness reproduced: the flake's attribution is broken even though "some FAIL
+// under this test name" exists. Replay must say so instead of "deterministic".
+func TestReplayRejectsVictimFailingInIsolation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	dir := clitest.FixtureDir(t, "repeat-accumulate")
+	store := filepath.Join(t.TempDir(), "c")
+	if code, _, errOut := clitest.Run("hunt", dir, "-capsule-dir", store, "--format", "json"); code != domain.ExitOK {
+		t.Fatalf("hunt code=%d %s", code, errOut)
+	}
+	path := filepath.Join(dir, "accum_test.go")
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(string(src), "	mu.Lock()",
+		"	t.Fatalf(\"unrelated breakage: config file missing\")\n	mu.Lock()", 1)
+	if changed == string(src) {
+		t.Fatal("fixture shape changed; update the mutation")
+	}
+	if err := os.WriteFile(path, []byte(changed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, errOut := clitest.Run("replay", "-capsule-dir", store, "--pkg", dir, "-n", "2")
+	if code != domain.ExitNotReproduced {
+		t.Fatalf("code = %d, want %d (%s%s)", code, domain.ExitNotReproduced, out, errOut)
+	}
+	if !strings.Contains(errOut+out, "fails in isolation") {
+		t.Errorf("the verdict should name the isolation failure: %s%s", out, errOut)
+	}
+}
