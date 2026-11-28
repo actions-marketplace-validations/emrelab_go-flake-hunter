@@ -115,7 +115,7 @@ jobs:
             echo "cross build: skipping the run check for $GOOS/$GOARCH"
           fi
 
-      - uses: anchore/sbom-action@v0.24.3
+      - uses: anchore/sbom-action@v0.24.4
         with:
           file: ${{ steps.binary.outputs.path }}
           output-file: ${{ steps.binary.outputs.path }}.spdx.json
